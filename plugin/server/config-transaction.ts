@@ -146,6 +146,8 @@ const FeatureDictationSchema = z
     stt: z
       .object({
         provider: SpeechProviderIdSchema.optional(),
+        apiKey: z.string().trim().min(1).optional(),
+        baseUrl: z.string().trim().min(1).optional(),
         model: z.string().min(1).optional(),
         language: z.string().trim().min(1).optional(),
         confidenceThreshold: z.number().optional(),
@@ -164,6 +166,8 @@ const FeatureVoiceModeSchema = z
     stt: z
       .object({
         provider: SpeechProviderIdSchema.optional(),
+        apiKey: z.string().trim().min(1).optional(),
+        baseUrl: z.string().trim().min(1).optional(),
         model: z.string().min(1).optional(),
         language: z.string().trim().min(1).optional(),
       })
@@ -173,6 +177,8 @@ const FeatureVoiceModeSchema = z
     tts: z
       .object({
         provider: SpeechProviderIdSchema.optional(),
+        apiKey: z.string().trim().min(1).optional(),
+        baseUrl: z.string().trim().min(1).optional(),
         model: z.string().min(1).optional(),
         // Host 0.12 accepts custom voices from OpenAI-compatible endpoints.
         // Older hosts still validate their own config.patch before persisting.

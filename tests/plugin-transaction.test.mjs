@@ -87,6 +87,24 @@ test('0.12 custom TTS voices survive unrelated config planning; empty voices sti
   }
 });
 
+test('Paseo 0.14 speech endpoint credentials remain compatible without revealing or stripping fields', () => {
+  const speech = { provider: 'openai', apiKey: 'synthetic-test-key', baseUrl: 'https://voice.example.test/v1', model: 'test-model' };
+  const config = { version: 1, features: {
+    dictation: { stt: { ...speech, language: 'pt' } },
+    voiceMode: { enabled: true, stt: { ...speech, language: 'pt' }, tts: { ...speech, voice: 'alloy' } },
+  } };
+  assert.doesNotThrow(() => assertPersistedCompatible(config));
+  for (const feature of ['dictation', 'voiceMode']) {
+    const bad = structuredClone(config);
+    bad.features[feature].stt.unrecognizedSpeechField = 'unknown';
+    assert.throws(() => assertPersistedCompatible(bad), error =>
+      error.code === 'SCHEMA_LOSS' && !error.message.includes('synthetic-test-key'));
+  }
+  const badTts = structuredClone(config);
+  badTts.features.voiceMode.tts.baseUrl = '';
+  assert.throws(() => assertPersistedCompatible(badTts), error => error.code === 'SCHEMA_LOSS');
+});
+
 test('activation registers owned Antigravity overrides without changing the native base', async t => {
   const { home, daemon, deps } = await makePluginFixture(t, { version: 1, daemon: { mcp: { enabled: true } } });
   const manager = createManager(deps); const id = randomUUID();
