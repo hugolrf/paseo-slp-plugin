@@ -1112,6 +1112,34 @@ function validateOwnedProfilesForRebind(
   return result;
 }
 
+/**
+ * Strict retirement exception: when Antigravity has been uninstalled, a
+ * provider disabled by the host is not resurrected just to satisfy the old
+ * receipt. The SAME journaled activation must remove that entry or keep it
+ * disabled. Do not tolerate any other drift, enabled executable, or active
+ * role selection. This exception is absent from deactivate/reconcile.
+ */
+function retiringDisabledAntigravityOnly(
+  id: string,
+  expected: unknown,
+  observed: unknown,
+  desired: OwnedProviderValue | undefined,
+  routing: RoleRoutingValue | null,
+  resolution: ExecutableResolution,
+): boolean {
+  if (!id.startsWith("slp-antigravity-") ||
+      routing === null ||
+      routing.supervisor.family === "antigravity" ||
+      routing.lead.family === "antigravity" ||
+      resolution.binaries.antigravity?.available !== false ||
+      !isRecord(expected) ||
+      !isRecord(observed) ||
+      expected.enabled !== true ||
+      observed.enabled !== false ||
+      (desired !== undefined && desired.enabled !== false)) return false;
+  return canonicalEqual({ ...expected, enabled: false }, observed);
+}
+
 export function planActivation(args: ActivationPlanArgs): PlanResult {
   const { raw, input, previousBinding, resolution, launchSet } = args;
   const routing = args.roleRouting;
@@ -1174,7 +1202,10 @@ export function planActivation(args: ActivationPlanArgs): PlanResult {
           { path: `agents.providers.${id}` },
         );
       }
-      if (expected.present && present && !canonicalEqual(expected.value, rawProviders[id])) {
+      if (expected.present && present && !canonicalEqual(expected.value, rawProviders[id]) &&
+          !retiringDisabledAntigravityOnly(
+            id, expected.value, rawProviders[id], desiredProviders[id], effectiveRouting, resolution,
+          )) {
         throw new OperationConflict(
           "OWNERSHIP_DRIFT",
           `owned provider ${id} was modified outside the journal`,
