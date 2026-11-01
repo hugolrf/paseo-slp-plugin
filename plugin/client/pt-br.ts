@@ -5,6 +5,7 @@ import { Text as NativeText } from "react-native";
 export const PT_BR_UI: Readonly<Record<string, string>> = {
   "SLP Supervisor": "Supervisor",
   "SLP Lead": "Líder",
+  "ACTIVE": "Ativo",
   "Overview": "Visão geral",
   "Profiles": "Perfis",
   "Peer pool": "Pool de Peers",

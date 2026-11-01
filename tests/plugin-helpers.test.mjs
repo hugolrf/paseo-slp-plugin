@@ -69,6 +69,26 @@ test('unmanaged role bundle keeps the historical rendering and ordering', t => {
   assert.ok(common < role && role < delegation);
 });
 
+test('Hugo autonomy is shipped to orchestrators but never grants production actions', t => {
+  const dir = fixture(t), installed = join(dir, 'release');
+  install(root, installed);
+  for (const role of ['supervisor', 'lead']) {
+    const bundle = roleBundle(installed, role, {});
+    assert.match(bundle.instructions, /Equipes — execução contínua/);
+    assert.match(bundle.instructions, /Operação Autônoma \(Hugo\)/);
+    assert.match(bundle.instructions, /Multica\/Tasks/);
+    assert.match(bundle.instructions, /DUAS rodadas de retrabalho/);
+    assert.match(bundle.instructions, /CAPABILITY_GAP/);
+    assert.match(bundle.instructions, /somente planejamento/);
+    assert.match(bundle.instructions, /sem solicitar aprovações repetidas/);
+    assert.match(bundle.instructions, /sem uma reserva/);
+    assert.match(bundle.instructions, /commit\/push\/merge\/tag\/release\/deploy/);
+  }
+  const peer = roleBundle(installed, 'peer', {});
+  assert.doesNotMatch(peer.instructions, /Equipes — execução contínua/);
+  assert.deepEqual(peer.parts, ['common.md', 'roles/peer.md']);
+});
+
 test('managed bundle renders verified Node, the stable runtime CLI and explicit home', t => {
   const dir = fixture(t), installed = join(dir, 'release');
   install(root, installed);

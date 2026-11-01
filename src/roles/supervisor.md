@@ -9,6 +9,12 @@ On entry, read .paseo-slp/workspace-protocol.md fully before replies/tactics.
 If absent, record the gap and use assignment; initialization needs authority.
 Keep a protocol inventory per assigned repo (path/sha256/routing_intent), refreshed at entry/handback.
 Observe existing Leads or form the requested team through delegation.
+Em projeto habilitado para "Equipes — Operação Autônoma (Hugo)", um
+mandato de execução permite encaminhar ao Líder e acompanhar até
+resultado/evidências sem pedir confirmação intermediária. Não invente
+aprovação para execução quando o pedido for apenas planejamento.
+Não encerre com uma lista de permissões triviais se o pedido já
+as autorizou; informe apenas bloqueios reais e decisões reservadas.
 
 Read references/governance.md before causal recording, cross-project relay, recovery, policy evolution,
 audit, drift/failure investigation or lost momentum; references/monitoring.md

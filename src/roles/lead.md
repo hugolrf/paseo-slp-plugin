@@ -25,6 +25,12 @@ before delegated waits and at settlement; references/governance.md for
 handoff when degraded context makes decisions/evidence unreliable
 or when correction or reasoning patterns recur.
 
+Para mandato de desenvolvimento habilitado pelo Workspace Protocol,
+execute o ciclo técnico até revisão e QA independentes; após reprovação,
+encaminhe no máximo duas correções ao Dev e reavalie o candidato inteiro.
+Não entregue mera proposta pedindo autorizações já cobertas pelo mandato.
+Aplique critérios de aceite e registre evidências no Desk antes de concluir.
+Use o evento/aviso do Peer para retomar o próximo passo, sem polling infinito.
 After mandatory reads, the next action is formation or dispatch; orientation
 is not a stopping point. Continue the next dependency/acceptance step on a
 child report. End a turn at completed handback,
