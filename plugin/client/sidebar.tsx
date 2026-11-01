@@ -3,7 +3,8 @@ import { useRpc } from "@getpaseo/plugin/client";
 import type { PluginPopoverProps, PluginSidebarItemProps } from "@getpaseo/plugin/client";
 import { SidebarRow } from "@getpaseo/plugin/client/ui";
 import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, View } from "react-native";
+import { Text, ptBR } from "./pt-br.ts";
 import { localTarget, status } from "../shared/contracts.ts";
 import type { StatusResult } from "../shared/contracts.ts";
 import { errorMessage } from "./manager-state.ts";
@@ -57,8 +58,8 @@ export function SlpSidebarItem({ currentScreen, openScreen, openPopover, theme }
   const size = 32;
   return <SidebarRow icon="Workflow" active={currentScreen?.screenId === MANAGER_SCREEN_ID}
     onPress={() => openScreen(managerLocation())}
-    trailing={<Pressable accessibilityRole="button" accessibilityLabel="Quick view SLP runtime"
-      accessibilityHint="Open runtime details for this host" focusable
+    trailing={<Pressable accessibilityRole="button" accessibilityLabel={ptBR("Quick view SLP runtime")}
+      accessibilityHint={ptBR("Open runtime details for this host")} focusable
       hitSlop={6} onPress={() => openPopover(RuntimePopover)}
       style={(state: ControlState) => [
         { width: size, height: size, borderRadius: 8, alignItems: "center", justifyContent: "center" },

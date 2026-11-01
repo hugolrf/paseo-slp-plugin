@@ -8,10 +8,10 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
   View,
 } from "react-native";
+import { ptBR, Text } from "./pt-br.ts";
 import type { SeatArchetype } from "../shared/archetypes.ts";
 import type { CatalogOptionValue } from "../shared/contracts.ts";
 
@@ -86,6 +86,7 @@ export function Button({ colors, label, onPress, disabled, kind = "ghost" }: {
   disabled?: boolean;
   kind?: "primary" | "ghost" | "danger";
 }) {
+  const translatedLabel = ptBR(label);
   const base = kind === "primary"
     ? { backgroundColor: colors.accent, borderColor: colors.accent }
     : kind === "danger"
@@ -101,7 +102,7 @@ export function Button({ colors, label, onPress, disabled, kind = "ghost" }: {
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={translatedLabel}
       accessibilityState={{ disabled: disabled === true }}
       style={(state: ControlState) => [
         styles.button,
@@ -115,7 +116,7 @@ export function Button({ colors, label, onPress, disabled, kind = "ghost" }: {
         state.pressed && !disabled && { opacity: 0.75 },
       ]}
     >
-      <Text style={[styles.buttonLabel, { color: textColor }]}>{label}</Text>
+      <Text style={[styles.buttonLabel, { color: textColor }]}>{translatedLabel}</Text>
     </Pressable>
   );
 }
@@ -268,20 +269,23 @@ export function Field({ colors, label, hint, value, onChangeText, placeholder, d
   multiline?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
+  const translatedLabel = ptBR(label);
+  const translatedHint = hint === undefined ? undefined : ptBR(hint);
+  const translatedPlaceholder = placeholder === undefined ? undefined : ptBR(placeholder);
   return (
     <View style={styles.field}>
-      <Text style={[styles.fieldLabel, { color: colors.foregroundMuted }]}>{label}</Text>
+      <Text style={[styles.fieldLabel, { color: colors.foregroundMuted }]}>{translatedLabel}</Text>
       <TextInput
         value={value}
         onChangeText={onChangeText}
-        placeholder={placeholder}
+        placeholder={translatedPlaceholder}
         placeholderTextColor={colors.foregroundMuted}
         editable={!disabled}
         autoCapitalize="none"
         autoCorrect={false}
         secureTextEntry={secure === true}
         multiline={multiline === true}
-        accessibilityLabel={label}
+        accessibilityLabel={translatedLabel}
         accessibilityState={{ disabled: disabled === true }}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
@@ -292,7 +296,7 @@ export function Field({ colors, label, hint, value, onChangeText, placeholder, d
           disabled && { opacity: 0.5 },
         ]}
       />
-      {hint ? <Text style={[styles.mutedSmall, { color: colors.foregroundMuted }]}>{hint}</Text> : null}
+      {translatedHint ? <Text style={[styles.mutedSmall, { color: colors.foregroundMuted }]}>{translatedHint}</Text> : null}
     </View>
   );
 }
@@ -318,6 +322,7 @@ export function OptionPicker({ colors, label, hint, options, value, onChange, on
   const [query, setQuery] = useState("");
   const [filterFocus, setFilterFocus] = useState(false);
   const [manualFocus, setManualFocus] = useState(false);
+  const translatedLabel = ptBR(label);
   const selected = options.find(option => option.id === value);
   const filtered = query.trim() === ""
     ? options
@@ -333,13 +338,13 @@ export function OptionPicker({ colors, label, hint, options, value, onChange, on
   };
   return (
     <View style={styles.field}>
-      <Text style={[styles.fieldLabel, { color: colors.foregroundMuted }]}>{label}</Text>
+      <Text style={[styles.fieldLabel, { color: colors.foregroundMuted }]}>{translatedLabel}</Text>
       <View style={[styles.selectBox, { borderColor: colors.border, backgroundColor: colors.surface0 }]}>
         <Pressable
           onPress={() => { if (!open) onOpen?.(); setOpen(current => !current); setQuery(""); }}
           disabled={disabled}
           accessibilityRole="button"
-          accessibilityLabel={open ? `Close ${label}` : `Change ${label.toLowerCase()}`}
+          accessibilityLabel={open ? `Fechar ${translatedLabel}` : `Alterar ${translatedLabel.toLowerCase()}`}
           accessibilityState={{ expanded: open, disabled: disabled === true }}
           style={(state: ControlState) => [
             styles.selectBoxRow,
@@ -353,7 +358,7 @@ export function OptionPicker({ colors, label, hint, options, value, onChange, on
             {effective ? effective.label : "Provider default"}
           </Text>
           <Text style={[styles.selectBoxLink, { color: colors.accent }]}>
-            {open ? "Close ⌃" : `Change ${label.toLowerCase()} ⌄`}
+            {open ? "Fechar ⌃" : `Alterar ${translatedLabel.toLowerCase()} ⌄`}
           </Text>
         </Pressable>
         {open ? (
@@ -361,12 +366,12 @@ export function OptionPicker({ colors, label, hint, options, value, onChange, on
             <TextInput
               value={query}
               onChangeText={setQuery}
-              placeholder={placeholder ?? "Filter…"}
+              placeholder={ptBR(placeholder ?? "Filter…")}
               placeholderTextColor={colors.foregroundMuted}
               editable={!disabled}
               autoCapitalize="none"
               autoCorrect={false}
-              accessibilityLabel={`Filter ${label}`}
+              accessibilityLabel={`Filtrar ${translatedLabel}`}
               onFocus={() => setFilterFocus(true)}
               onBlur={() => setFilterFocus(false)}
               style={[styles.input, { borderColor: filterFocus ? colors.accent : colors.border, color: colors.foreground, backgroundColor: colors.surface0 }, disabled && { opacity: 0.5 }]}
@@ -378,7 +383,7 @@ export function OptionPicker({ colors, label, hint, options, value, onChange, on
                   onPress={() => pick(option.id)}
                   disabled={disabled}
                   accessibilityRole="button"
-                  accessibilityLabel={`Select ${option.label !== option.id ? `${option.label} ${option.id}` : option.id}`}
+                  accessibilityLabel={`Selecionar ${option.label !== option.id ? `${option.label} ${option.id}` : option.id}`}
                   style={(state: ControlState) => [
                     styles.pickerRow,
                     (state.hovered || state.pressed) && !disabled && { backgroundColor: colors.surface2 },
@@ -394,7 +399,7 @@ export function OptionPicker({ colors, label, hint, options, value, onChange, on
                 onPress={() => pick("")}
                 disabled={disabled}
                 accessibilityRole="button"
-                accessibilityLabel="Select Provider default"
+                accessibilityLabel="Selecionar padrão do provedor"
                 style={(state: ControlState) => [
                   styles.pickerRow,
                   (state.hovered || state.pressed) && !disabled && { backgroundColor: colors.surface2 },
@@ -414,7 +419,7 @@ export function OptionPicker({ colors, label, hint, options, value, onChange, on
               onPress={() => setManualOpen(current => !current)}
               disabled={disabled}
               accessibilityRole="button"
-              accessibilityLabel="Enter model ID manually"
+              accessibilityLabel="Informar ID do modelo manualmente"
               accessibilityState={{ expanded: manualOpen, disabled: disabled === true }}
               style={(state: ControlState) => [
                 styles.pickerRow,
@@ -430,12 +435,12 @@ export function OptionPicker({ colors, label, hint, options, value, onChange, on
               <TextInput
                 value={value}
                 onChangeText={onChange}
-                placeholder="Model ID — e.g. swe-2-max"
+                placeholder="ID do modelo — ex.: swe-2-max"
                 placeholderTextColor={colors.foregroundMuted}
                 editable={!disabled}
                 autoCapitalize="none"
                 autoCorrect={false}
-                accessibilityLabel={`${label} ID`}
+                accessibilityLabel={`ID de ${translatedLabel}`}
                 onFocus={() => setManualFocus(true)}
                 onBlur={() => setManualFocus(false)}
                 style={[styles.input, { borderColor: manualFocus ? colors.accent : colors.border, color: colors.foreground, backgroundColor: colors.surface0 }, disabled && { opacity: 0.5 }]}
@@ -444,7 +449,7 @@ export function OptionPicker({ colors, label, hint, options, value, onChange, on
           </View>
         ) : null}
       </View>
-      {hint ? <Text style={[styles.mutedSmall, { color: colors.foregroundMuted }]}>{hint}</Text> : null}
+      {hint ? <Text style={[styles.mutedSmall, { color: colors.foregroundMuted }]}>{ptBR(hint)}</Text> : null}
     </View>
   );
 }

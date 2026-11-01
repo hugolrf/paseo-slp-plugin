@@ -2,7 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import type { ReactNode } from "react";
 import { useRpc, useWorkspace } from "@getpaseo/plugin/client";
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
+import { Text, ptBR } from "./pt-br.ts";
 import { getWorkspaceWorkflow } from "../shared/workflow-view.ts";
 import type { WorkspaceWorkflowRequest, WorkspaceWorkflowResult } from "../shared/workflow-view.ts";
 import type { DeskWorkflowProjectionItemValue } from "../shared/enforcement.ts";
@@ -104,9 +105,9 @@ function taskQueueLine(taskCounts: WorkspaceWorkflowResult["assignments"][number
     return "no task entries recorded";
   }
   const obligations = taskCounts.openHolds + taskCounts.pendingAcks + taskCounts.resources;
-  return `tasks ${tasks} · ready ${taskCounts.ready} · held ${taskCounts.held} · running ${taskCounts.running} · integrating ${taskCounts.integrating}`
-    + (obligations > 0 ? ` · outstanding obligations ${obligations}` : "")
-    + (taskCounts.controls > 0 ? ` · controls ${taskCounts.controls}` : "");
+  return `tarefas ${tasks} · prontas ${taskCounts.ready} · retidas ${taskCounts.held} · em execução ${taskCounts.running} · integrando ${taskCounts.integrating}`
+    + (obligations > 0 ? ` · obrigações pendentes ${obligations}` : "")
+    + (taskCounts.controls > 0 ? ` · controles ${taskCounts.controls}` : "");
 }
 
 function taskCaption(item: Extract<DeskWorkflowProjectionItemValue, { kind: "taskEntry" }>): string {
@@ -163,7 +164,7 @@ function RecordedFields({ colors, value }: { colors: Colors; value: object }) {
 function RecordDetails({ colors, title, children }: { colors: Colors; title: string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   return <View style={{ borderTopWidth: 1, borderColor: colors.border, gap: 8 }}>
-    <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ expanded: open }}
+    <Pressable accessibilityRole="button" accessibilityLabel={ptBR(title)} accessibilityState={{ expanded: open }}
       onPress={() => setOpen(current => !current)} style={(state: ControlState) => [
         { minHeight: 44, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 8 },
         state.hovered && { backgroundColor: colors.surface2 }, state.focused && focusRing(colors),
@@ -234,7 +235,7 @@ function WorkItem({ colors, item, briefRevision }: { colors: Colors; item: DeskW
       Recorded against brief {row.briefRevision}; the current brief is {briefRevision}.
     </Text> : null}
     {item.kind === "scopeReview" ? <>
-      <Badge colors={colors} label={`Recorded review · ${item.row.verdict}`} />
+      <Badge colors={colors} label={`Revisão registrada · ${ptBR(item.row.verdict)}`} />
       <Text style={[styles.mutedSmall, { color: colors.foregroundMuted }]}>{qualificationLine(item)}</Text>
       <KV colors={colors} label="Reviewer" value={item.row.reviewerAgentId} />
       <Text style={[styles.mutedSmall, { color: colors.foregroundMuted }]}>Review time is not supplied by this projection.</Text>
@@ -247,7 +248,7 @@ function WorkItem({ colors, item, briefRevision }: { colors: Colors; item: DeskW
     </> : null}
     {item.kind === "checkDefinition" ? <><Badge colors={colors} label="Declared check" /><Text style={[styles.muted, { color: colors.foreground }]}>{item.row.label}</Text></> : null}
     {item.kind === "checkRun" ? <>
-      <Badge colors={colors} label={`Runtime check observation · ${item.row.status}`} />
+      <Badge colors={colors} label={`Observação da verificação no runtime · ${ptBR(item.row.status)}`} />
       <KV colors={colors} label="Check" value={item.row.checkId} />
       <KV colors={colors} label="Exit code" value={item.row.exitCode === null ? "Unavailable" : String(item.row.exitCode)} />
       <Text style={[styles.mutedSmall, { color: colors.foregroundMuted }]}>Check time is not supplied by this projection.{item.row.outputTruncated ? " Output tail is truncated; inspect its evidence pointer." : ""}</Text>
@@ -297,8 +298,8 @@ export function WorkflowPanel({ workspaceId, host, theme, layout, navigation }: 
       <Text style={{ color: colors.foregroundMuted }}>No desk ledger exists for this repository. Work in chats or other artifacts is not represented here.</Text>
     </Card> : null}
     {result?.state === "ready" && !view ? <>
-      <Text style={{ color: colors.foregroundMuted }}>{result.assignments.length} of {result.assignmentTotal} registered assignments · ledger {result.ledgerRevision}</Text>
-      {result.assignmentOffset > 0 ? <Text style={{ color: colors.foregroundMuted }}>{result.assignmentOffset} earlier entries omitted from this page; Reload returns to the first page.</Text> : null}
+      <Text style={{ color: colors.foregroundMuted }}>{result.assignments.length} de {result.assignmentTotal} atribuições registradas · ledger {result.ledgerRevision}</Text>
+      {result.assignmentOffset > 0 ? <Text style={{ color: colors.foregroundMuted }}>{result.assignmentOffset} entradas anteriores omitidas desta página; Recarregar volta à primeira página.</Text> : null}
       {result.assignmentTotal === 0 ? <Text style={{ color: colors.foregroundMuted }}>No assignments are registered in this desk.</Text> : null}
       {result.assignments.map(assignment => <Card key={assignment.id} colors={colors} title={assignment.objective ?? "Objective not recorded"}
         trailing={<Badge colors={colors} label={`Recorded · ${assignment.state}`} />}>
@@ -317,7 +318,7 @@ export function WorkflowPanel({ workspaceId, host, theme, layout, navigation }: 
       <Card colors={colors} title={view.currentBrief?.body.objective ?? view.legacyObjective ?? "Objective not recorded"}>
         <OwnerLink colors={colors} hostId={host.id} agentId={view.ownership.ownerAgentId} navigation={navigation} />
         <Text style={[styles.mutedSmall, { color: colors.foregroundMuted }]}>
-          ownership revision {view.ownership.ownershipRevision} · {view.ownership.ownerMembership ? `recorded membership ${view.ownership.ownerMembership.state}` : "membership unrecorded"}
+          revisão de responsabilidade {view.ownership.ownershipRevision} · {view.ownership.ownerMembership ? `participação registrada ${ptBR(view.ownership.ownerMembership.state)}` : "participação não registrada"}
         </Text>
         <Text style={[styles.muted, { color: colors.foregroundMuted }]}>{taskQueueLine(view.taskCounts)}</Text>
         <RecordDetails colors={colors} title="Assignment and owner provenance">
@@ -348,7 +349,7 @@ export function WorkflowPanel({ workspaceId, host, theme, layout, navigation }: 
         <Button key={section.id} colors={colors} label={section.title} kind={view.section === section.id ? "primary" : "ghost"}
           onPress={() => { void reader.section(section.id); }} />)}</View>
       <Text style={{ color: colors.foregroundMuted }}>
-        {view.items.length} of {view.total} records · {view.omittedBefore} earlier and {view.omittedAfter} later records outside this page. Reload returns to the first page.
+        {view.items.length} de {view.total} registros · {view.omittedBefore} anteriores e {view.omittedAfter} registros posteriores fora desta página. Recarregar volta à primeira página.
       </Text>
       <Text style={[styles.mutedSmall, { color: colors.foregroundMuted }]}>Declared intent and evidence pointers are claims; candidate/check observations are measurements. Review qualification and current rulings come from the desk.</Text>
       {view.items.map((item, index) => <WorkItem key={`${item.kind}:${view.omittedBefore + index}`} colors={colors} item={item} briefRevision={view.briefRevision} />)}

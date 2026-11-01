@@ -4,7 +4,8 @@
 // status, shared catalog read views and target-bound lastError plumbing.
 import { useEffect, useLayoutEffect, useState } from "react";
 import { useTargetSnapshot } from "../target-async.ts";
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "../pt-br.ts";
 import type {
   CatalogResult,
   FamilyName,

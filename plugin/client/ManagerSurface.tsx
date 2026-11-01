@@ -15,9 +15,9 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import {
   Pressable,
   ScrollView,
-  Text,
   View,
 } from "react-native";
+import { ptBR, Text } from "./pt-br.ts";
 import { activate, catalog, deactivate, reconcile, status, localTarget, setLanguage, getRoleRouting, setRoleRouting, getJev, setJev, setJevKey, testJev, getPeerPool, setPeerPool } from "../shared/contracts.ts";
 import { getSupervision, setSupervision } from "../shared/supervision.ts";
 import { FAMILY_IDS, FAMILY_LABEL, FAMILY_PICKER_ORDER } from "../shared/runtime/families.ts";
@@ -592,7 +592,7 @@ function ManagerSession({ host, layout, theme, navigation, params = {}, onSectio
     void runOperation(() => callDeactivate(input), input.operationId);
   };
 
-  const headerSubtitle = `${statusFresh ? "Runtime and work settings" : view.lastError ? "Runtime read unavailable" : statusView ? "Updating saved view" : "Reading runtime"} on ${host.label}`;
+  const headerSubtitle = `${statusFresh ? "Configurações de runtime e trabalho" : view.lastError ? "Leitura do runtime indisponível" : statusView ? "Atualizando visão salva" : "Lendo runtime"} em ${host.label}`;
   return (
     <ScrollView
       style={{ backgroundColor: colors.surface0 }}
@@ -602,7 +602,7 @@ function ManagerSession({ host, layout, theme, navigation, params = {}, onSectio
         <View style={{ flex: 1, gap: 4 }}>
           <Text style={[styles.pageTitle, { color: colors.foreground }]}>SLP</Text>
           <Text numberOfLines={1} ellipsizeMode="tail" accessibilityLiveRegion="polite"
-            accessibilityLabel={headerSubtitle} accessibilityHint={!statusFresh ? "Writes wait for a fresh read." : undefined}
+            accessibilityLabel={ptBR(headerSubtitle)} accessibilityHint={!statusFresh ? ptBR("Writes wait for a fresh read.") : undefined}
             style={[styles.muted, { color: colors.foregroundMuted }]}>
             {headerSubtitle}
           </Text>
@@ -655,7 +655,7 @@ function ManagerSession({ host, layout, theme, navigation, params = {}, onSectio
                   key={section.id}
                   onPress={() => setActiveSection(section.id)}
                   accessibilityRole="tab"
-                  accessibilityLabel={`${section.label} tab`}
+                  accessibilityLabel={`${section.label} · aba`}
                   accessibilityState={{ selected: active }}
                   style={(state: ControlState) => [
                     styles.navItem,
@@ -781,7 +781,7 @@ function ManagerSession({ host, layout, theme, navigation, params = {}, onSectio
         <KV colors={colors} label="Profiles" value={routing.saved ? saveApplyBusy || view.pending ? view.pending?.uncertain ? "Saved; Apply outcome unconfirmed" : "Saved; Apply operation in progress" : "Saved; inspect latest Apply result" : routing.dirty ? "Unsaved draft" : routing.diverged ? "Saved profiles differ from binding" : "Inspect Profiles for saved and applied settings"} />
         <KV colors={colors} label="Peer pool" value={pool.poolReadError ? "Read unavailable" : pool.poolDirty ? "Unsaved draft" : pool.poolData?.error ? "Pool unavailable" : pool.poolData ? pool.poolData.pool ? "Saved pool; read at next formation" : "No saved pool" : "Awaiting pool read"} />
         <KV colors={colors} label="Jev" value={jevSummary(jev.view, jev.loadError, { dirty: jev.dirty, saved: jev.saved })} />
-        <View style={styles.chipRow}>{MANAGER_SECTIONS.filter(section => section.id !== "overview" && section.id !== "maintenance").map(section => <Button key={section.id} colors={colors} label={`Open ${section.label.toLowerCase()}`} onPress={() => setActiveSection(section.id)} />)}</View>
+        <View style={styles.chipRow}>{MANAGER_SECTIONS.filter(section => section.id !== "overview" && section.id !== "maintenance").map(section => <Button key={section.id} colors={colors} label={`Abrir ${section.label.toLowerCase()}`} onPress={() => setActiveSection(section.id)} />)}</View>
       </Card></View>
 
       {/* Keep the Profiles frame mounted while the first read is pending. */}

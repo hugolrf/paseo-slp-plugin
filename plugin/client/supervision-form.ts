@@ -130,10 +130,10 @@ export function configFromForm(form: SupervisionForm): { config: SupervisionConf
   const threshold = Number(form.confidenceThreshold.trim());
   if (form.confidenceThreshold.trim() === "" || !Number.isFinite(threshold) ||
       threshold < SUPERVISION_CONFIDENCE_MIN || threshold > SUPERVISION_CONFIDENCE_MAX) {
-    return { error: `Confidence must be a number from ${SUPERVISION_CONFIDENCE_MIN} to ${SUPERVISION_CONFIDENCE_MAX}.` };
+    return { error: `A confiança deve ser um número de ${SUPERVISION_CONFIDENCE_MIN} a ${SUPERVISION_CONFIDENCE_MAX}.` };
   }
   const delayMs = delayMsOf(form.delaySeconds);
-  if (delayMs === null) return { error: `Wait before alerting must be 0 to ${SUPERVISION_PENDING_DELAY_MAX_MS / 1000} seconds.` };
+  if (delayMs === null) return { error: `A espera antes do alerta deve ser de 0 a ${SUPERVISION_PENDING_DELAY_MAX_MS / 1000} segundos.` };
   if (form.mode === "notify" && form.supervisor === null) {
     return { error: "Choose the Supervisor who should receive alerts." };
   }

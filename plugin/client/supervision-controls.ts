@@ -35,18 +35,18 @@ export function contributeSupervisionControls(client: PluginClientContext): () =
     id: "slp-supervision-recipient",
     workspaceId,
     button: {
-      title: "SLP Supervisor alerts",
+      title: "Alertas do Supervisor SLP",
       icon: "Bell",
       behavior: {
         kind: "menu",
         items: [
           {
-            kind: "item", id: "settings", title: "Open supervision settings", icon: "Settings",
+            kind: "item", id: "settings", title: "Abrir configurações de supervisão", icon: "Settings",
             behavior: { kind: "action", onPress() { if (!disposed) client.openScreen(managerLocation("supervision")); } },
           },
           { kind: "separator", id: "separator" },
           {
-            kind: "item", id: "disable", title: "Turn off alerts", icon: "BellOff",
+            kind: "item", id: "disable", title: "Desativar alertas", icon: "BellOff",
             behavior: { kind: "action", onPress: disable },
           },
         ],
