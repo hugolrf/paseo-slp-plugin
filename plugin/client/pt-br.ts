@@ -3,6 +3,8 @@ import type { ComponentProps, ReactNode } from "react";
 import { Text as NativeText } from "react-native";
 
 export const PT_BR_UI: Readonly<Record<string, string>> = {
+  "SLP Supervisor": "Supervisor",
+  "SLP Lead": "Líder",
   "Overview": "Visão geral",
   "Profiles": "Perfis",
   "Peer pool": "Pool de Peers",
@@ -91,7 +93,7 @@ export const PT_BR_UI: Readonly<Record<string, string>> = {
   "Turning on…": "Ativando…",
   "Record only": "Somente registrar",
   "Record and alert a Supervisor": "Registrar e alertar um Supervisor",
-  "All SLP Leads": "Todos os Leads SLP",
+  "All SLP Leads": "Todos os Líderes das Equipes",
   "Selected Leads": "Leads selecionados",
   "Confidence needed": "Confiança necessária",
   "Wait before alerting (seconds)": "Espera antes do alerta (segundos)",
@@ -154,7 +156,7 @@ export const PT_BR_UI: Readonly<Record<string, string>> = {
   "Unsaved draft": "Rascunho não salvo",
   "Unsaved starter presets": "Presets iniciais não salvos",
   "runtime refresh unavailable": "atualização do runtime indisponível",
-  "Quick view SLP runtime": "Visão rápida do runtime SLP",
+  "Quick view SLP runtime": "Visão rápida das Equipes",
   "Open runtime details for this host": "Abrir detalhes do runtime deste host",
   "Active binding": "Vínculo ativo",
   "In this plugin": "Neste plugin",
@@ -288,8 +290,8 @@ export const PT_BR_UI: Readonly<Record<string, string>> = {
   "Could not load Jev settings": "Não foi possível carregar as configurações do Jev",
   "Checks how each Lead briefs its Peers and handles their hand-backs, and can alert a Supervisor.": "Verifica como cada Lead orienta seus Peers e trata as devolutivas, podendo alertar um Supervisor.",
   "Could not load supervision settings:": "Não foi possível carregar as configurações de supervisão:",
-  "No SLP Leads are running right now.": "Nenhum Lead SLP está em execução agora.",
-  "No SLP Supervisor is running. Start one, then press Refresh list.": "Nenhum Supervisor SLP está em execução. Inicie um e pressione Atualizar lista.",
+  "No SLP Leads are running right now.": "Nenhum Líder está em execução agora.",
+  "No SLP Supervisor is running. Start one, then press Refresh list.": "Nenhum Supervisor está em execução. Inicie um e pressione Atualizar lista.",
   "Findings appear below; nobody is messaged.": "Os achados aparecem abaixo; nenhuma mensagem é enviada.",
   "No findings does not mean communication was fine — many conversations cannot be checked.": "A ausência de achados não significa que a comunicação estava correta — muitas conversas não podem ser verificadas.",
   "Nothing to show — the observer is not running for this Paseo home.": "Nada para exibir — o observador não está em execução neste diretório do Paseo.",
@@ -410,8 +412,8 @@ export const PT_BR_UI: Readonly<Record<string, string>> = {
   "Runtime state and binding verification do not establish project acceptance.": "O estado do runtime e a verificação do vínculo não estabelecem aceite do projeto.",
   "Runtime unavailable:": "Runtime indisponível:",
   "SLP on": "SLP ativado",
-  "SLP section": "Seção SLP",
-  "SLP work": "Trabalho SLP",
+  "SLP section": "Seção Equipes",
+  "SLP work": "Trabalho das Equipes",
   "Save and apply": "Salvar e aplicar",
   "Save and apply profiles": "Salvar e aplicar perfis",
   "Save verifies that the active SLP runtime can read v2; update SLP runtime first if it is still v1-only.": "Salvar verifica se o runtime SLP ativo consegue ler v2; atualize primeiro o runtime SLP se ele ainda aceitar apenas v1.",
@@ -663,7 +665,7 @@ export const PT_BR_DYNAMIC_FRAGMENTS: Readonly<Record<string, string>> = {
   ,"Measured candidate observation": "Observação medida do candidato"
   ,"Measured candidate · incomplete coverage": "Candidato medido · cobertura incompleta"
   ,"Runtime check observation · ": "Observação da verificação no runtime · "
-  ,"Activate SLP runtime": "Ativar runtime SLP"
+  ,"Activate SLP runtime": "Ativar runtime do Equipes"
   ,"Apply saved profiles": "Aplicar perfis salvos"
   ,"Assessed with no finding; the Lead's handling could not be judged —": "Avaliado sem achado; não foi possível julgar a atuação do Lead —"
   ,"Deactivate detaches configuration but retains every runtime and launcher directory; they remain available to existing sessions, and deletion requires separate maintenance authority after dependencies have ended.": "Desativar desvincula a configuração, mas preserva todos os diretórios de runtime e inicializadores; eles continuam disponíveis para as sessões existentes, e a exclusão exige autorização de manutenção separada após o encerramento das dependências."
@@ -673,7 +675,7 @@ export const PT_BR_DYNAMIC_FRAGMENTS: Readonly<Record<string, string>> = {
   ,"Runtime and work settings": "Configurações de runtime e trabalho"
   ,"Runtime read unavailable": "Leitura do runtime indisponível"
   ,"SLP management operations are administrator-only and require an exclusive administrative edit window for the selected daemon. Do not edit daemon configuration through the app, another plugin, a CLI, or a file while activate, reconcile, or deactivate is in progress. The plugin serializes its own operations and verifies persisted and live results. Paseo 0.8.0 provides no compare-and-swap for these patches; this plugin cannot guarantee preservation against concurrent external writers. A detected mismatch stops automatic mutation and requires reconciliation.": "As operações de gerenciamento do SLP são exclusivas de administradores e exigem uma janela exclusiva de edição administrativa para o daemon selecionado. Não edite a configuração do daemon pelo aplicativo, por outro plugin, por uma CLI ou por um arquivo enquanto uma ativação, reconciliação ou desativação estiver em andamento. O plugin serializa suas próprias operações e verifica os resultados persistidos e ativos. O Paseo 0.8.0 não oferece comparação e troca para essas alterações; este plugin não pode garantir a preservação diante de gravações externas simultâneas. Uma divergência detectada interrompe a alteração automática e exige reconciliação."
-  ,"Update SLP runtime": "Atualizar runtime SLP"
+  ,"Update SLP runtime": "Atualizar runtime do Equipes"
   ,"Updating saved view": "Atualizando visão salva"
 };
 

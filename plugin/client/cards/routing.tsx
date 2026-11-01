@@ -335,7 +335,7 @@ export function RoutingCard({ colors, target, statusView, routing, catalogs, cat
           >
             <View style={[styles.profileHeading, { borderBottomColor: colors.border }]}>
               <Text style={[styles.profileRole, { color: colors.foreground }]}>
-                {role === "supervisor" ? "SLP Supervisor" : "SLP Lead"}
+                {role === "supervisor" ? "Supervisor" : "Líder"}
               </Text>
               <Text style={[styles.mutedSmall, { color: colors.foregroundMuted }]}>
                 {role === "supervisor" ? "Supervision and review" : "Task planning and delegation"}
