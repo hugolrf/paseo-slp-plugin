@@ -281,7 +281,7 @@ export function WorkflowPanel({ workspaceId, host, theme, layout, navigation }: 
   const result = current?.result;
   const view = result?.view;
   return <ScrollView style={{ backgroundColor: colors.surface0 }} contentContainerStyle={{ padding: layout.compact ? 12 : 24, gap: 14, width: "100%", maxWidth: 1120, alignSelf: "center" }}>
-    <Text style={{ color: colors.foreground, fontSize: 22, fontWeight: "600" }}>SLP work</Text>
+    <Text style={{ color: colors.foreground, fontSize: 22, fontWeight: "600" }}>Trabalho das Equipes</Text>
     <Text style={{ color: colors.foregroundMuted }}>
       Recorded assignments, owners, task queues and proof on {host.label}. Reload for current state. Runtime activity, recorded rulings and results do not establish project acceptance or resource settlement.
     </Text>

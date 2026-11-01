@@ -38,7 +38,7 @@ export function RuntimePopover({ host, theme, layout, openScreen, close }: Plugi
   useEffect(() => { void refresh(); }, [refresh]);
   const colors = theme.colors;
   return <ScrollView contentContainerStyle={{ padding: layout.compact ? 16 : 24, gap: 12 }}>
-    <Text style={[styles.cardTitle, { color: colors.foreground }]}>SLP on {host.label}</Text>
+    <Text style={[styles.cardTitle, { color: colors.foreground }]}>Equipes em {host.label}</Text>
     {read.loading ? <Text style={[styles.muted, { color: colors.foregroundMuted }]}>Reading runtime…</Text> : null}
     {read.error ? <Text selectable style={[styles.muted, { color: colors.statusDanger }]}>Runtime unavailable: {read.error}. Refresh to retry.</Text> : null}
     <StatePill colors={colors} state={read.result?.state ?? null} />
@@ -58,7 +58,7 @@ export function SlpSidebarItem({ currentScreen, openScreen, openPopover, theme }
   const size = 32;
   return <SidebarRow icon="Workflow" active={currentScreen?.screenId === MANAGER_SCREEN_ID}
     onPress={() => openScreen(managerLocation())}
-    trailing={<Pressable accessibilityRole="button" accessibilityLabel={ptBR("Quick view SLP runtime")}
+    trailing={<Pressable accessibilityRole="button" accessibilityLabel={"Visão rápida do Equipes"}
       accessibilityHint={ptBR("Open runtime details for this host")} focusable
       hitSlop={6} onPress={() => openPopover(RuntimePopover)}
       style={(state: ControlState) => [

@@ -21,4 +21,4 @@ export const managerLocation = (section: ManagerSectionId = "overview") => ({
   screenId: MANAGER_SCREEN_ID, params: { section },
 });
 export const managerTitle = (params: PluginScreenParams): string =>
-  `SLP · ${MANAGER_SECTIONS.find(section => section.id === managerSection(params))!.label}`;
+  `Equipes · ${MANAGER_SECTIONS.find(section => section.id === managerSection(params))!.label}`;

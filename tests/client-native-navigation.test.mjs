@@ -27,8 +27,8 @@ test('native contribution keeps manager ID, normalizes section links and sidebar
   const screen = rig.registrations.find(row => row.kind === 'screen').value;
   assert.equal(screen.id, 'manager');
   assert.equal(rig.registrations.find(row => row.value.id === 'slp').kind, 'sidebar-header');
-  assert.equal(screen.title({ section: 'supervision' }), 'SLP · Supervision');
-  assert.equal(screen.title({ section: '/private/path', token: 'never-forward' }), 'SLP · Overview');
+  assert.equal(screen.title({ section: 'supervision' }), 'Equipes · Supervisão');
+  assert.equal(screen.title({ section: '/private/path', token: 'never-forward' }), 'Equipes · Visão geral');
   const command = rig.registrations.find(row => row.value.id === 'open-slp').value;
   command.onSelect({ openScreen: input => rig.opened.push(input) });
   assert.deepEqual(rig.opened, [{ screenId: 'manager', params: { section: 'overview' } }]);
@@ -43,7 +43,7 @@ test('native contribution keeps manager ID, normalizes section links and sidebar
   assert.equal(row.props.active, true);
   const quick = row.props.trailing;
   assert.equal(quick.props.accessibilityRole, 'button');
-  assert.equal(quick.props.accessibilityLabel, 'Quick view SLP runtime');
+  assert.equal(quick.props.accessibilityLabel, 'Visão rápida do Equipes');
   assert.equal(quick.props.focusable, true);
   assert.equal(quick.props.children.props.name, 'Info');
   assert.equal(quick.props.children.props.color, colors.foregroundMuted);
@@ -153,7 +153,7 @@ test('popover reads selected host only on open/refresh, drops late target result
   await act(async () => statusReads.calls[0].reject(new Error('old host error')));
   assert.doesNotMatch(JSON.stringify(renderer.toJSON()), /old host error/);
   await act(async () => statusReads.calls[1].reject(new Error('current host unavailable')));
-  assert.match(JSON.stringify(renderer.toJSON()), /current host unavailable/);
+  assert.match(JSON.stringify(renderer.toJSON()), /current host indisponível/);
   assert.doesNotMatch(JSON.stringify(renderer.toJSON()), /0 runtime conflicts/);
   const before = calls.length;
   t.mock.timers.tick(120_000);

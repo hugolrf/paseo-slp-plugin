@@ -1,6 +1,6 @@
 {
   "id": "paseo-slp",
-  "name": "Paseo SLP",
+  "name": "Equipes",
   "description": "Equipes de agentes para planejamento, desenvolvimento, revisão e QA no Paseo, com tarefas, acompanhamento e evidências.",
   "icon": "assets/icon.png",
   "media": [
@@ -10,6 +10,16 @@
     "assets/screenshot-overview.png",
     "assets/screenshot-peer-pool.png"
   ],
-  "requirements": { "paseo": ">=0.11.0" },
-  "build": [["npm", "install", "--omit=dev", "--no-audit", "--no-fund"]]
+  "requirements": {
+    "paseo": ">=0.11.0"
+  },
+  "build": [
+    [
+      "npm",
+      "install",
+      "--omit=dev",
+      "--no-audit",
+      "--no-fund"
+    ]
+  ]
 }

@@ -571,7 +571,7 @@ export function StatePill({ colors, state }: { colors: Colors; state: string | n
   const color = colors[tone];
   return (
     <View style={[styles.pill, { borderColor: color }]}>
-      <Text style={[styles.pillLabel, { color }]}>{state ?? "unknown"}</Text>
+      <Text style={[styles.pillLabel, { color }]}>{state === "ACTIVE" ? "Ativo" : state === "INACTIVE" ? "Inativo" : state === "ACTIVATING" ? "Ativando" : state === "RECOVERY_REQUIRED" ? "Recuperação necessária" : state ?? "Desconhecido"}</Text>
     </View>
   );
 }

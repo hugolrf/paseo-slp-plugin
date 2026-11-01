@@ -600,7 +600,7 @@ function ManagerSession({ host, layout, theme, navigation, params = {}, onSectio
     >
       <View style={styles.headerRow}>
         <View style={{ flex: 1, gap: 4 }}>
-          <Text style={[styles.pageTitle, { color: colors.foreground }]}>SLP</Text>
+          <Text style={[styles.pageTitle, { color: colors.foreground }]}>Equipes</Text>
           <Text numberOfLines={1} ellipsizeMode="tail" accessibilityLiveRegion="polite"
             accessibilityLabel={ptBR(headerSubtitle)} accessibilityHint={!statusFresh ? ptBR("Writes wait for a fresh read.") : undefined}
             style={[styles.muted, { color: colors.foregroundMuted }]}>
@@ -644,7 +644,7 @@ function ManagerSession({ host, layout, theme, navigation, params = {}, onSectio
 
       {params.section && !MANAGER_SECTIONS.some(section => section.id === params.section) ?
         <Text style={[styles.mutedSmall, { color: colors.statusWarning }]}>Unknown section. Showing Overview.</Text> : null}
-      {compact ? <SettingsSelect label="SLP section" value={activeSection}
+      {compact ? <SettingsSelect label="Seção Equipes" value={activeSection}
         options={MANAGER_SECTIONS.map(section => ({ label: section.label, value: section.id }))}
         onValueChange={setActiveSection} /> : null}
           <View style={compact ? { display: "none" } : undefined}><View role="tablist" accessibilityLabel="Manager sections" style={styles.navStrip}>
