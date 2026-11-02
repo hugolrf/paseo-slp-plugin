@@ -68,5 +68,22 @@ export const GetWorkspaceWorkflowOutput = z.object({
 export const getWorkspaceWorkflow = defineRpc({
   name: "get-workspace-workflow", input: GetWorkspaceWorkflowInput, output: GetWorkspaceWorkflowOutput,
 });
+export const StartWorkspaceTeamInput = z.object({
+  workspaceId: z.string().min(1).max(256),
+}).strict();
+
+export const StartWorkspaceTeamOutput = z.object({
+  schemaVersion: z.literal(1),
+  workspaceId: z.string().min(1).max(256),
+  state: z.enum(["started", "already-managed"]),
+  repoKey: Sha,
+  agentId: z.string().min(1).max(256).nullable(),
+}).strict();
+
+export const startWorkspaceTeam = defineRpc({
+  name: "start-workspace-team", input: StartWorkspaceTeamInput, output: StartWorkspaceTeamOutput,
+});
+export type StartWorkspaceTeamResult = z.infer<typeof StartWorkspaceTeamOutput>;
+
 export type WorkspaceWorkflowRequest = z.input<typeof GetWorkspaceWorkflowInput>;
 export type WorkspaceWorkflowResult = z.infer<typeof GetWorkspaceWorkflowOutput>;

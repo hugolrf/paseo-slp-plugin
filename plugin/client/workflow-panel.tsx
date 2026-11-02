@@ -4,7 +4,7 @@ import { useRpc, useWorkspace } from "@getpaseo/plugin/client";
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
 import { Pressable, ScrollView, View } from "react-native";
 import { Text, ptBR } from "./pt-br.ts";
-import { getWorkspaceWorkflow } from "../shared/workflow-view.ts";
+import { getWorkspaceWorkflow, startWorkspaceTeam } from "../shared/workflow-view.ts";
 import type { WorkspaceWorkflowRequest, WorkspaceWorkflowResult } from "../shared/workflow-view.ts";
 import type { DeskWorkflowProjectionItemValue } from "../shared/enforcement.ts";
 import { useTargetLifetime } from "./target-async.ts";
@@ -275,7 +275,23 @@ function WorkItem({ colors, item, briefRevision }: { colors: Colors; item: DeskW
 export function WorkflowPanel({ workspaceId, host, theme, layout, navigation }: PluginWorkspacePanelProps) {
   const directory = useWorkspace(workspaceId, workspace => workspace.directory);
   const call = useRpc(getWorkspaceWorkflow);
+  const startTeam = useRpc(startWorkspaceTeam);
   const reader = useWorkspaceWorkflow(JSON.stringify([host.id, workspaceId, directory]), workspaceId, call);
+  const [startingTeam, setStartingTeam] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+  const bootstrap = async () => {
+    if (startingTeam) return;
+    setStartingTeam(true);
+    setStartError(null);
+    try {
+      await startTeam({ workspaceId });
+      await reader.reload();
+    } catch (cause) {
+      setStartError(errorMessage(cause));
+    } finally {
+      setStartingTeam(false);
+    }
+  };
   const colors = theme.colors;
   const current = reader.current;
   const result = current?.result;
@@ -294,8 +310,12 @@ export function WorkflowPanel({ workspaceId, host, theme, layout, navigation }: 
     {result?.problem ? <Card colors={colors} title={result.state === "conflict" ? "Work changed — reload" : "Work records unavailable"}>
       <Text selectable style={{ color: colors.statusWarning }}>{result.problem.detail}</Text>
     </Card> : null}
-    {result?.state === "absent" ? <Card colors={colors} title="No desk ledger">
-      <Text style={{ color: colors.foregroundMuted }}>No desk ledger exists for this repository. Work in chats or other artifacts is not represented here.</Text>
+    {result?.state === "absent" ? <Card colors={colors} title="Team not started in this repository">
+      <Text style={{ color: colors.foregroundMuted }}>This workspace is valid, but no managed Equipes desk exists yet. Start a Supervisor here to initialize the desk and coordinate the current workspace or PR.</Text>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        <Button colors={colors} label={startingTeam ? "Starting team…" : "Start team in this workspace"} onPress={() => { void bootstrap(); }} disabled={startingTeam} />
+      </View>
+      {startError ? <Text selectable style={{ color: colors.statusDanger }}>{startError}</Text> : null}
     </Card> : null}
     {result?.state === "ready" && !view ? <>
       <Text style={{ color: colors.foregroundMuted }}>{result.assignments.length} de {result.assignmentTotal} atribuições registradas · ledger {result.ledgerRevision}</Text>
