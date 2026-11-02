@@ -27,8 +27,7 @@ export default function contribute(client: Parameters<PluginClientContribution>[
   }
   try {
     removers.push(client.addScreen({ id: MANAGER_SCREEN_ID, title: managerTitle, Component: ManagerScreen }));
-    // Item lateral "Equipes" removido a pedido (02/11/2026): o acesso é pelo Command Center ("Abrir Equipes").
-    // removers.push(client.addSidebarHeaderItem({ id: "slp", title: "Equipes", Component: SlpSidebarItem }));
+    removers.push(client.addSidebarHeaderItem({ id: "slp", title: "Equipes", Component: SlpSidebarItem }));
     removers.push(client.addCommandCenterItem({
       id: "open-slp", title: "Abrir Equipes", icon: "Workflow", context: "global",
       keywords: ["slp", "supervisor", "lead", "peer", "providers", "hierarchy"],
