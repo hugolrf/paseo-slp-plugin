@@ -29,8 +29,8 @@ import { createEnforcement } from "./server/enforcement.ts";
 import { recoverLockView } from "./server/desk-recovery.ts";
 import { readRuntimePinView } from "./server/runtime-pin.ts";
 import { createDeskBridge } from "./server/desk-bridge.ts";
-import { getWorkspaceWorkflow } from "./shared/workflow-view.ts";
-import { readWorkspaceWorkflow } from "./server/workflow-view.ts";
+import { getWorkspaceWorkflow, startWorkspaceTeam } from "./shared/workflow-view.ts";
+import { readWorkspaceWorkflow, startManagedWorkspaceTeam } from "./server/workflow-view.ts";
 import type { TaskHostApi } from "./server/desk-task-execution-host.ts";
 import type { TaskRuntimeApi } from "./server/desk-task-runtime.ts";
 import type { FormationWorkspaceApi } from "./server/desk-placement.ts";
@@ -62,6 +62,11 @@ export default function contribute(server: Parameters<PluginServerContribution>[
     noteTaskApi(paseo);
     deskBridge.noteDispatch(paseo);
     return readWorkspaceWorkflow(input, paseo);
+  });
+  server.handle(startWorkspaceTeam, (input, { paseo }) => {
+    noteTaskApi(paseo);
+    deskBridge.noteDispatch(paseo);
+    return startManagedWorkspaceTeam(input, paseo);
   });
   server.handle(catalog, (input, { paseo }) => loadCatalog(input, paseo));
   // Plugin-owned state files under slp-runtime/state — same class of

@@ -11,7 +11,8 @@
 // and opens the Manager.
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "../pt-br.ts";
 import { useTargetSnapshot } from "../target-async.ts";
 import { usePaseo } from "@getpaseo/plugin/client";
 import type { TargetValue } from "../../shared/contracts.ts";

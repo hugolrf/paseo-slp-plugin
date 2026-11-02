@@ -1,4 +1,5 @@
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "./pt-br.ts";
 import type { JevViewValue, StatusResult } from "../shared/contracts.ts";
 import { Badge, Card, KV, styles } from "./ui-kit.tsx";
 import type { Colors } from "./ui-kit.tsx";

@@ -4,7 +4,8 @@
 // status, shared catalog read views and target-bound lastError plumbing.
 import { useEffect, useLayoutEffect, useState } from "react";
 import { useTargetSnapshot } from "../target-async.ts";
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "../pt-br.ts";
 import type {
   CatalogResult,
   FamilyName,
@@ -334,7 +335,7 @@ export function RoutingCard({ colors, target, statusView, routing, catalogs, cat
           >
             <View style={[styles.profileHeading, { borderBottomColor: colors.border }]}>
               <Text style={[styles.profileRole, { color: colors.foreground }]}>
-                {role === "supervisor" ? "SLP Supervisor" : "SLP Lead"}
+                {role === "supervisor" ? "Supervisor" : "Líder"}
               </Text>
               <Text style={[styles.mutedSmall, { color: colors.foregroundMuted }]}>
                 {role === "supervisor" ? "Supervision and review" : "Task planning and delegation"}

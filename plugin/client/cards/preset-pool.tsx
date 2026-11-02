@@ -1,7 +1,8 @@
 // The v2 view shares the existing target-bound draft/CAS controller. The v1
 // editor stays available until the Human explicitly previews a conversion.
 import { useState } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
+import { Text } from '../pt-br.ts';
 import type { CatalogResult, FamilyName } from '../../shared/contracts.ts';
 import { FAMILY_LABEL } from '../../shared/runtime/families.ts';
 import { isAutomaticEffort } from '../../shared/runtime/peer-presets.ts';

@@ -36,14 +36,14 @@ test('assignment list opens its current owner on the selected host in one action
   await act(async () => rig.read.calls[0].resolve(response({ assignments: [assignment({ taskCounts: counts({ held: 2, running: 1 }) })],
     assignmentTotal: 8, assignmentOffset: 3 })));
   assert.match(rig.text(), /Ship a readable work panel|Current owner name/);
-  assert.match(rig.text(), /tasks 3 · ready 0 · held 2 · running 1/);
-  assert.match(rig.text(), /earlier entries omitted/);
+  assert.match(rig.text(), /tarefas 3 · prontas 0 · retidas 2 · em execução 1/);
+  assert.match(rig.text(), /entradas anteriores omitidas/);
   assert.doesNotMatch(rig.text(), /assignment-1/);
   await rig.press('Open owner chat');
   assert.deepEqual(rig.opened, [{ agentId: 'owner-agent', serverId: 'selected-host' }]);
   await rig.press('Copy owner ID');
   assert.deepEqual(rig.copied, ['owner-agent']);
-  await act(async () => rig.renderer.root.findByProps({ accessibilityLabel: 'Assignment details' }).props.onPress());
+  await act(async () => rig.renderer.root.findByProps({ accessibilityLabel: 'Detalhes da atribuição' }).props.onPress());
   assert.match(rig.text(), /assignment-1/);
   assert.equal(rig.read.calls.length, 1, 'details/navigation never mutate or refetch the desk');
 });
@@ -52,7 +52,7 @@ test('owner fallback is copyable without navigation; late clipboard errors stay 
   const rig = await fixture(t, { navigation: undefined });
   await act(async () => rig.read.calls[0].resolve(response({ assignments: [assignment()] })));
   assert.equal(rig.renderer.root.findAllByProps({ label: 'Open owner chat' }).length, 0);
-  assert.match(rig.text(), /Chat navigation is unavailable/);
+  assert.match(rig.text(), /A navegação para conversas não está disponível/);
   const copy = deferredRpc(); rig.mod.clipboardState.copy = copy.rpc;
   await rig.press('Copy owner ID');
   await act(async () => rig.renderer.update(React.createElement(rig.mod.WorkflowPanel, props({ host: { id: 'host-b', label: 'Host B' } }))));
@@ -63,22 +63,22 @@ test('owner fallback is copyable without navigation; late clipboard errors stay 
 test('null/missing counts, measured zero, absent desk, partial page and RPC error remain different states', async t => {
   const rig = await fixture(t);
   await act(async () => rig.read.calls[0].resolve(response({ assignments: [assignment({ taskCounts: null })] })));
-  assert.match(rig.text(), /task queue not recorded/);
-  assert.doesNotMatch(rig.text(), /no task entries recorded/);
+  assert.match(rig.text(), /fila de tarefas não registrada/);
+  assert.doesNotMatch(rig.text(), /nenhuma entrada de tarefa registrada/);
   await rig.press('Reload');
   await act(async () => rig.read.calls[1].resolve(response({ assignments: [assignment({ taskCounts: undefined })] })));
-  assert.match(rig.text(), /task counts unavailable/);
+  assert.match(rig.text(), /contagens de tarefas indisponíveis/);
   await rig.press('Reload');
   await act(async () => rig.read.calls[2].resolve(response({ assignments: [assignment({ taskCounts: counts() })] })));
-  assert.match(rig.text(), /no task entries recorded/);
+  assert.match(rig.text(), /nenhuma entrada de tarefa registrada/);
   await rig.press('Reload');
   await act(async () => rig.read.calls[3].resolve(response({ state: 'absent', assignments: [], assignmentTotal: 0 })));
-  assert.match(rig.text(), /No desk ledger/);
-  assert.doesNotMatch(rig.text(), /no task entries recorded|No assignments are registered/);
+  assert.match(rig.text(), /Nenhum ledger da mesa/);
+  assert.doesNotMatch(rig.text(), /nenhuma entrada de tarefa registrada|Nenhuma atribuição está registrada/);
   await rig.press('Reload');
   await act(async () => rig.read.calls[4].reject(new Error('fixture read failed')));
   assert.match(rig.text(), /fixture read failed/);
-  assert.doesNotMatch(rig.text(), /no task entries recorded/);
+  assert.doesNotMatch(rig.text(), /nenhuma entrada de tarefa registrada/);
 });
 
 test('evidence keeps declarations, measurements, incomplete coverage and recorded review qualification distinct', async t => {
@@ -96,18 +96,18 @@ test('evidence keeps declarations, measurements, incomplete coverage and recorde
         qualification: { standingApproval: false, discharging: false, eligible: false } },
     ] };
   await act(async () => rig.read.calls[1].resolve(response({ view })));
-  assert.match(rig.text(), /Measured candidate · incomplete coverage/);
+  assert.match(rig.text(), /Candidato medido · cobertura incompleta/);
   assert.match(rig.text(), /2026-10-11T03:00:00Z/);
-  assert.match(rig.text(), /Declared check/);
-  assert.match(rig.text(), /Runtime check observation · failed/);
-  assert.match(rig.text(), /Unavailable/);
-  assert.match(rig.text(), /not supplied by this projection/);
-  assert.match(rig.text(), /Recorded review · approved/);
-  assert.match(rig.text(), /outside the current standing qualification/);
-  assert.match(rig.text(), /tasks 4 · ready 0 · held 4/);
-  assert.match(rig.text(), /"4"," of ","12"," records/);
+  assert.match(rig.text(), /Verificação declarada/);
+  assert.match(rig.text(), /Observação da verificação no runtime · falhou/);
+  assert.match(rig.text(), /Indisponível/);
+  assert.match(rig.text(), /não é fornecido por esta projeção/);
+  assert.match(rig.text(), /Revisão registrada · aprovado/);
+  assert.match(rig.text(), /fora da qualificação vigente atual/);
+  assert.match(rig.text(), /tarefas 4 · prontas 0 · retidas 4/);
+  assert.match(rig.text(), /"4"," de ","12"," registros/);
   assert.doesNotMatch(rig.text(), /unreadable-file|fixture-log/);
-  await act(async () => { for (const node of rig.renderer.root.findAllByProps({ accessibilityLabel: 'Record details and provenance' })) node.props.onPress(); });
+  await act(async () => { for (const node of rig.renderer.root.findAllByProps({ accessibilityLabel: 'Detalhes e proveniência do registro' })) node.props.onPress(); });
   assert.match(rig.text(), /unreadable-file|fixture-log/);
   assert.ok(rig.read.calls.every(call => call.input.schemaVersion === 1));
 });

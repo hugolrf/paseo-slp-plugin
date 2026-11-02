@@ -331,6 +331,29 @@ test('a provider with advertised modes cannot bypass an unresolved saved profile
   assert.equal(f.effects.sends.length, 0);
 });
 
+test('Claude Lead selects host-advertised Auto when saved mode is unresolved', async t => {
+  const profile = { ...codexProfile, provider: 'slp-claude-lead', model: 'claude-opus-5-5', modeId: null,
+    thinkingOptionId: 'medium', featureValues: {} };
+  const f = await boundFormationSeat(t, { profile, providerModes: [
+    { id: 'plan' }, { id: 'default' }, { id: 'auto' }, { id: 'acceptEdits' }, { id: 'bypassPermissions' },
+  ] });
+  const out = await callTool(f, 1, 'slp_seat_create', seatCreate('claude-safe-auto'));
+  assert.equal(out.result?.code === 'CAPABILITY_GAP', false, JSON.stringify(out.result));
+  assert.equal(f.effects.creates.length, 1, JSON.stringify(out));
+  assert.equal(f.effects.creates[0].options.config.modeId, 'auto');
+  assert.equal(f.effects.creates[0].options.config.provider, 'slp-claude-lead/claude-opus-5-5');
+});
+
+test('Claude Lead without Auto never falls back to bypass, acceptEdits or default', async t => {
+  const profile = { ...codexProfile, provider: 'slp-claude-lead', model: 'claude-opus-5-5', modeId: null };
+  const f = await boundFormationSeat(t, { profile, providerModes: [
+    { id: 'plan' }, { id: 'default' }, { id: 'acceptEdits' }, { id: 'bypassPermissions' },
+  ] });
+  const out = await callTool(f, 1, 'slp_seat_create', seatCreate('claude-no-safe-default'));
+  assert.equal(out.result.code, 'CAPABILITY_GAP', JSON.stringify(out.result));
+  assert.equal(f.effects.creates.length, 0);
+});
+
 test('empty-mode provider verification rejects a host-reported inherited mode and withholds assignment', async t => {
   const profile = { ...codexProfile, provider: 'slp-pi-lead', model: 'openai-codex/gpt-6-luna', modeId: null };
   const f = await boundFormationSeat(t, { profile, providerModes: [], reportedModeId: 'inherited-mode' });

@@ -45,8 +45,8 @@ test('paseo-plugin.json parses through the host readPluginManifest', async t => 
   const manifest = await host.readPluginManifest(PLUGIN_DIR);
   assert.deepEqual(manifest, {
     id: 'paseo-slp',
-    name: 'Paseo SLP',
-    description: 'Supervisor, Lead and Peer coding-agent teams for Paseo, with a repository desk for assignments, review and evidence.',
+    name: 'Equipes',
+    description: 'Equipes de agentes para planejamento, desenvolvimento, revisão e QA no Paseo, com tarefas, acompanhamento e evidências.',
     icon: 'assets/icon.png',
     media: [
       'assets/intro-cross-workspace.jpg',

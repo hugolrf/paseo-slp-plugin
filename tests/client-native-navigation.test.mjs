@@ -26,9 +26,9 @@ test('native contribution keeps manager ID, normalizes section links and sidebar
   t.after(cleanup);
   const screen = rig.registrations.find(row => row.kind === 'screen').value;
   assert.equal(screen.id, 'manager');
-  assert.equal(rig.registrations.find(row => row.value.id === 'slp').kind, 'sidebar-header');
-  assert.equal(screen.title({ section: 'supervision' }), 'SLP · Supervision');
-  assert.equal(screen.title({ section: '/private/path', token: 'never-forward' }), 'SLP · Overview');
+  assert.equal(rig.registrations.some(row => row.kind === 'sidebar-header'), false, 'Equipes is reached via Command Center, not a sidebar item');
+  assert.equal(screen.title({ section: 'supervision' }), 'Equipes · Supervisão');
+  assert.equal(screen.title({ section: '/private/path', token: 'never-forward' }), 'Equipes · Visão geral');
   const command = rig.registrations.find(row => row.value.id === 'open-slp').value;
   command.onSelect({ openScreen: input => rig.opened.push(input) });
   assert.deepEqual(rig.opened, [{ screenId: 'manager', params: { section: 'overview' } }]);
@@ -43,7 +43,7 @@ test('native contribution keeps manager ID, normalizes section links and sidebar
   assert.equal(row.props.active, true);
   const quick = row.props.trailing;
   assert.equal(quick.props.accessibilityRole, 'button');
-  assert.equal(quick.props.accessibilityLabel, 'Quick view SLP runtime');
+  assert.equal(quick.props.accessibilityLabel, 'Visão rápida do Equipes');
   assert.equal(quick.props.focusable, true);
   assert.equal(quick.props.children.props.name, 'Info');
   assert.equal(quick.props.children.props.color, colors.foregroundMuted);
@@ -73,14 +73,14 @@ test('native contribution keeps manager ID, normalizes section links and sidebar
   assert.equal(compactStyle.backgroundColor, alternate.surface2);
   assert.equal(compact.props.children.props.color, alternate.foregroundMuted);
   await cleanup();
-  assert.equal(rig.removed.length, 5);
+  assert.equal(rig.removed.length, 4);
   await cleanup();
-  assert.equal(rig.removed.length, 5, 'cleanup is idempotent');
+  assert.equal(rig.removed.length, 4, 'cleanup is idempotent');
 });
 
 test('partial registration failure rolls back every acquired contribution before any bell timer starts', async t => {
   const mod = await loadHooks(t);
-  for (const failing of ['addSidebarHeaderItem', 'addCommandCenterItem', 'addWorkspacePanel']) {
+  for (const failing of ['addCommandCenterItem', 'addWorkspacePanel']) {
     const rig = registrationRig({ [failing]: () => { throw new Error('host refused contribution'); } });
     assert.throws(() => mod.contributeClient(rig.client), /host refused/);
     assert.deepEqual(rig.removed, rig.registrations.map(row => row.value.id).reverse());
@@ -92,13 +92,13 @@ test('cleanup awaits async removers, removes all siblings after a failure and di
   const mod = await loadHooks(t);
   t.mock.timers.enable({ apis: ['setInterval'] });
   const removed = [];
-  const rig = registrationRig({ addSidebarHeaderItem: value => async () => {
+  const rig = registrationRig({ addCommandCenterItem: value => async () => {
     await Promise.resolve(); removed.push(value.id); throw new Error('remove failed');
   } });
   const cleanup = mod.contributeClient(rig.client);
   await assert.rejects(cleanup(), /cleanup failed/);
-  assert.deepEqual(removed, ['slp']);
-  assert.equal(rig.removed.length, 4);
+  assert.deepEqual(removed.sort(), ['open-slp', 'open-slp-work']);
+  assert.equal(rig.removed.length, 2);
   const before = rig.calls.length;
   mod.notifySupervisionChanged();
   t.mock.timers.tick(120_000);
@@ -153,7 +153,7 @@ test('popover reads selected host only on open/refresh, drops late target result
   await act(async () => statusReads.calls[0].reject(new Error('old host error')));
   assert.doesNotMatch(JSON.stringify(renderer.toJSON()), /old host error/);
   await act(async () => statusReads.calls[1].reject(new Error('current host unavailable')));
-  assert.match(JSON.stringify(renderer.toJSON()), /current host unavailable/);
+  assert.match(JSON.stringify(renderer.toJSON()), /current host indisponível/);
   assert.doesNotMatch(JSON.stringify(renderer.toJSON()), /0 runtime conflicts/);
   const before = calls.length;
   t.mock.timers.tick(120_000);

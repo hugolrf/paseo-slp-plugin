@@ -222,9 +222,28 @@ export function createFormationPlanner(deps: {
       };
     }
     if (planned.create.settings.modeId === undefined) {
-      throw new FormationPlanningError("CAPABILITY_GAP", "selected provider advertises permission modes but the saved profile has no resolved mode");
+      // Hugo explicitly authorized autonomous execution in Equipes. Resolve
+      // this narrowly for the managed Claude Lead only when the *exact*
+      // provider advertises its safety-classified Auto mode. Auto is NOT
+      // bypassPermissions: risky actions still require approval. Never
+      // silently select first, acceptEdits or bypass, and never inherit a
+      // different provider's mode catalog. Other providers fail closed.
+      if (input.role !== "lead" || provider !== "slp-claude-lead" || !modeIds.includes("auto")) {
+        throw new FormationPlanningError("CAPABILITY_GAP", "selected provider advertises permission modes but the saved profile has no resolved mode");
+      }
+      planned = {
+        ...planned,
+        create: {
+          ...planned.create,
+          settings: { ...planned.create.settings, modeId: "auto" },
+        },
+        warnings: [
+          ...(planned.warnings ?? []).filter(warning => !warning.startsWith("no modeId resolved (")),
+          "Claude Lead selected host-advertised safety-classified Auto mode; bypass and unsafe actions are not authorized.",
+        ],
+      };
     }
-    if (!modeIds.includes(planned.create.settings.modeId)) {
+    if (planned.create.settings.modeId === undefined || !modeIds.includes(planned.create.settings.modeId)) {
       throw new FormationPlanningError("INVALID_RECORD", "saved profile mode is absent from the fresh selected-provider snapshot");
     }
     return { ...planned, modeSupport: { provider, modes: modeIds } };

@@ -3,7 +3,8 @@
 // the adapter seam. The shell supplies target-bound lastError plumbing.
 import { useEffect, useState } from "react";
 import { useTargetSnapshot } from "../target-async.ts";
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { Text } from "../pt-br.ts";
 import { JevProvider } from "../../shared/contracts.ts";
 import type {
   GetJevRequest,
@@ -477,7 +478,7 @@ export function JevCard({ colors, target, jev }: {
           ) : null}
           <Field
             colors={colors}
-            label={`${JEV_KIND_LABEL[jev.view.provider?.kind ?? jev.kind]} API key`}
+            label={`Chave de API ${JEV_KIND_LABEL[jev.view.provider?.kind ?? jev.kind]}`}
             hint={`Stored at slp-runtime/state/${JEV_KIND_DEFAULT[jev.view.provider?.kind ?? jev.kind].keyFile} (0600) — never shown back; enter a new key to replace it`}
             value={jev.keyInput}
             onChangeText={text => { jev.setKeyInput(text); }}
@@ -493,19 +494,19 @@ export function JevCard({ colors, target, jev }: {
           <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
             <Button
               colors={colors}
-              label={jev.keyBusy ? "Working…" : `Save ${JEV_KIND_LABEL[jev.view.provider?.kind ?? jev.kind]} key`}
+              label={jev.keyBusy ? "Working…" : `Salvar chave ${JEV_KIND_LABEL[jev.view.provider?.kind ?? jev.kind]}`}
               disabled={!jev.fresh || !target || jev.keyBusy || jev.dirty || jev.keyInput.trim() === ""}
               onPress={() => void jev.saveKey(jev.keyInput.trim())}
             />
             <Button
               colors={colors}
-              label={`Remove ${JEV_KIND_LABEL[jev.view.provider?.kind ?? jev.kind]} key`}
+              label={`Remover chave ${JEV_KIND_LABEL[jev.view.provider?.kind ?? jev.kind]}`}
               disabled={!jev.fresh || !target || jev.keyBusy || jev.dirty || jev.view?.hasKey !== true}
               onPress={() => void jev.saveKey(null)}
             />
             <Button
               colors={colors}
-              label={jev.testBusy ? "Testing…" : `Test ${JEV_KIND_LABEL[jev.view.provider?.kind ?? jev.kind]} connection`}
+              label={jev.testBusy ? "Testing…" : `Testar conexão ${JEV_KIND_LABEL[jev.view.provider?.kind ?? jev.kind]}`}
               disabled={!jev.fresh || !target || jev.testBusy || jev.dirty || jev.view?.hasKey !== true || jev.keyInput.trim() !== ""}
               onPress={() => void jev.runTest()}
             />

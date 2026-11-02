@@ -416,7 +416,7 @@ export function buildRoleChoice(
   stored: RoleChoiceValue | undefined,
   defs: CatalogResult["features"],
 ): RoleChoiceBuild {
-  const label = role === "supervisor" ? "SLP Supervisor" : "SLP Lead";
+  const label = role === "supervisor" ? "Supervisor" : "Líder";
   const choice: Record<string, unknown> = { ...(stored ?? {}), family: form.family };
   const model = form.model.trim();
   const modeId = form.modeId.trim();
