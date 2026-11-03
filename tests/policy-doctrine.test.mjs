@@ -489,7 +489,7 @@ test('project grounding binds every role, names no Human-specific source and rea
   assert.doesNotMatch(read('src/common.md'), /no source named[^.]*BLOCK/u, 'a repository without named sources is still grounded by the repository itself');
   assert.doesNotMatch(read('src/common.md'), /read-only/u, 'reading grounding sources must not forbid writes granted elsewhere');
   const humanSpecific = /Hugo|C[ée]rebro|Multica|CemigSim|DWLaw|TCERO|Azure|Jira|fourtime\.dev1|hugolrf@gmail/iu;
-  for (const path of ['src/common.md', 'src/roles/peer.md', 'src/roles/lead.md'])
+  for (const path of ['src/common.md', 'src/delegation.md', 'src/roles/supervisor.md', 'src/roles/peer.md', 'src/roles/lead.md'])
     assert.doesNotMatch(read(path), humanSpecific, `${path} names no Human-specific source, company or identity`);
   assert.doesNotMatch(read('src/delegation.md'), /fourtime\.dev1|hugolrf@gmail|hugo-<empresa>-cliente/u, 'company context owns identities and rules');
   pins('src/roles/supervisor.md', /Carry project grounding \(common\.md\) in each Lead assignment/);
@@ -500,9 +500,9 @@ test('project grounding binds every role, names no Human-specific source and rea
 test('seat formation policy stays within frozen per-file and total word budgets', () => {
   const caps = {
   "src/common.md": 695,
-  "src/delegation.md": 750,
-  "src/roles/supervisor.md": 402,
-  "src/roles/lead.md": 501,
+  "src/delegation.md": 266,
+  "src/roles/supervisor.md": 345,
+  "src/roles/lead.md": 435,
   "src/roles/peer.md": 541,
   "src/templates/workspace-protocol.md": 997,
   "src/references/provider-routing.md": 619,
@@ -521,5 +521,5 @@ test('seat formation policy stays within frozen per-file and total word budgets'
   for (const [path, cap] of Object.entries(caps)) assert.ok(words(raw(path)) <= cap, `${path} exceeds ${cap} words`);
   const all = installUnitPaths(root).filter(path => path.startsWith('src/') && path.endsWith('.md'));
   assert.deepEqual([...all].sort(), Object.keys(caps).sort(), 'account for every installed policy file');
-  assert.ok(all.reduce((total, path) => total + words(raw(path)), 0) <= 11609, 'frozen total policy word ceiling; pruning needs no filler');
+  assert.ok(all.reduce((total, path) => total + words(raw(path)), 0) <= 11002, 'frozen total policy word ceiling; pruning needs no filler');
 });
