@@ -34,8 +34,9 @@ Return disposition result:
 | TestEngineer | Granted test artifacts and executed checks on the pinned candidate; commands/results, coverage and gaps; no product verdict. |
 
 Include assumptions, risks, unfinished dependencies and project grounding
-(organization, git identity, sources or gap) in handbacks, in assignment language. Read-only reports stay in-session unless report
-writes are assigned; preserve sealed-report boundaries before cross-review.
+(organization, git identity, sources or gap) in handbacks, in assignment
+language. Read-only reports stay in-session unless report writes are assigned;
+preserve sealed-report boundaries before cross-review.
 Lead owns project acceptance. Pause writes after handback; corrections require
 an authorized same-assignment follow-up.
 

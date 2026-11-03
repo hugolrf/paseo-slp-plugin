@@ -21,7 +21,8 @@ test('project grounding reaches Supervisor, Lead and Peer bundles without compan
     const text = flat(roleBundle(installed, role, {}).instructions);
     assert.match(text, /Project grounding: before acting on a repository/, `${role} gets the cross-project rule`);
     assert.match(text, /injected company context/, `${role} treats injected company context as a named source`);
-    assert.match(text, /A named source you cannot read is a CAPABILITY_GAP/, `${role} treats an unreadable source as a gap`);
+    assert.match(text, /With no source named, or one you cannot read, record a CAPABILITY_GAP/, `${role} records an absent or unreadable source as a gap`);
+    assert.match(text, /item's real state at its origin/, `${role} checks open work and the origin state`);
     assert.match(text, /Evidence, state and identity of one organization never hold for another/, `${role} never mixes organizations`);
     assert.doesNotMatch(text, /fourtime\.dev1@dwlaw|hugolrf@gmail/u, `${role} bundle repeats no company identity`);
   }

@@ -8,12 +8,14 @@ Peer uses the authorized project pool option.
 Project grounding: before acting on a repository, identify its organization
 and project from the repository (remote, path, workspace) and from the sources
 the Human, Workspace Protocol, injected company context or assignment name
-(memory vault, work tracker, origin system). Read them read-only and apply that organization's own rules:
-git identity, branch/tag/production flow, quality gate, naming, publication
-approval. Evidence, state and identity of one organization never hold for
-another. A named source you cannot read is a CAPABILITY_GAP: report it, BLOCK
-dependent work, never proceed blind. Supervisor/Lead carry the grounding in each
-assignment; its receiver verifies it against the repository.
+(memory vault, work tracker, origin system). Read them; reading grants no
+writes. Check open work, to avoid duplicating or contradicting it, and the
+item's real state at its origin before acting. Apply that organization's own
+rules: git identity, branch/tag/production flow, quality gate, naming,
+publication approval. Evidence, state and identity of one organization never
+hold for another. With no source named, or one you cannot read, record a
+CAPABILITY_GAP and BLOCK dependent work; never proceed as if grounded. A
+receiver verifies the grounding it was given against the repository.
 
 Seat-facing text is anything another seat or the Human reads: prompts,
 assignments, reports, agent-responses, handbacks, briefs and notebook
