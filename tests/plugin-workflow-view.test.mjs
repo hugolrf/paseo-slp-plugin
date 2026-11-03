@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { bindWorkspaceDesk, readWorkspaceWorkflow } from '../plugin/server/workflow-view.ts';
@@ -39,8 +39,8 @@ test('work view binds the fresh selected workspace and shares a repo desk across
   const view = await bindWorkspaceDesk('workspace-selected', sdk);
   assert.equal(selected, 'workspace-selected');
   assert.equal(view.state, 'ok');
-  assert.equal(view.workspaceDirectory, worktree);
-  assert.equal(view.repo.gitCommonDir, join(f.repository, '.git'));
+  assert.equal(view.workspaceDirectory, realpathSync(worktree));
+  assert.equal(view.repo.gitCommonDir, realpathSync(join(f.repository, '.git')));
   assert.equal(view.repo.hostId, 'local');
   const main = await bindWorkspaceDesk('workspace-selected', host(workspace(f.repository)));
   assert.equal(main.repoKey, view.repoKey);
@@ -81,7 +81,7 @@ test('repository environment cannot redirect a read away from the selected works
   t.after(() => names.forEach((name, i) => { if (previous[i] === undefined) delete process.env[name]; else process.env[name] = previous[i]; }));
   const binding = await bindWorkspaceDesk('workspace-selected', host(workspace(f.repository)));
   assert.equal(binding.state, 'ok');
-  assert.equal(binding.repo.gitCommonDir, join(f.repository, '.git'));
+  assert.equal(binding.repo.gitCommonDir, realpathSync(join(f.repository, '.git')));
 });
 
 const request = (over = {}) => ({ schemaVersion: 1, workspaceId: 'workspace-selected', assignmentId: null,

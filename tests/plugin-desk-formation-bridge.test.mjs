@@ -23,7 +23,7 @@ function managedBridge(t, options = {}) {
   const { afterCreate, profile = codexProfile, reportedModeId, omitCurrentModeId, providerEntries, registration = 'ready', registerIn = 'child' } = options;
   const providerModes = Object.hasOwn(options, 'providerModes') ? options.providerModes : [{ id: 'full-access' }];
   const includeProviderModes = options.includeProviderModes !== false;
-  const dir = mkdtempSync(join(tmpdir(), 'slp-managed-formation-'));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'slp-managed-formation-')));
   t.after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 3 }));
   const repo = gitRepo(t, 'slp-managed-formation-repo-');
   const home = join(dir, 'home');
@@ -156,7 +156,7 @@ function managedBridge(t, options = {}) {
 
 async function boundFormationSeat(t, options) {
   const f = managedBridge(t, options);
-  assert.equal(await f.ready, 'listening');
+  assert.equal(await f.ready, 'listening', JSON.stringify(f.bridge.state()));
   t.after(() => f.bridge.stop());
   const handle = `formation-${randomUUID()}`;
   const row = memberRow(handle, { provider: f.profile.provider, at }, {

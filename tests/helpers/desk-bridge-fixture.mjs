@@ -22,7 +22,7 @@ export function observeDeskBridgeFixtures(value) { observer = value; }
 export function observeDeskStore(root, store) { return observer?.store?.(root, store) ?? store; }
 
 export function tmp(t, prefix) {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
   t.after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 3 }));
   return dir;
 }
