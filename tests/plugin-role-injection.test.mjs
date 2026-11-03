@@ -424,6 +424,50 @@ test('agent.create: pre-set systemPrompt is appended after the role bundle', asy
   assert.ok(out.config.systemPrompt.length > expected.length);
 });
 
+test('agent.create: company context sits between the role bundle and the host systemPrompt for every role', async t => {
+  const context = '\n## Contexto empresarial obrigatório: Acme / app\nRegras da empresa.\n';
+  const seen = [];
+  const { injection, fixture } = makeInjection(t, { deps: { companyContext: cwd => { seen.push(cwd); return context; } } });
+  for (const role of ROLES) {
+    const out = await injection.agentCreate(
+      createReq(`slp-claude-${role}`, { systemPrompt: 'existing host instructions' }),
+    );
+    const bundle = roleBundle(fixture.candidate, role, managedEnv(fixture)).instructions;
+    const text = out.config.systemPrompt;
+    assert.equal(text, bundle + context + 'existing host instructions', `${role}: bundle, then company context, then host prompt`);
+    assert.ok(bundle.includes('Project grounding'), `${role}: the bundle carries the grounding rule`);
+    assert.ok(text.indexOf('Project grounding') < text.indexOf('Contexto empresarial obrigatório'), `${role}: grounding rule precedes the company context`);
+    assert.ok(text.indexOf('Contexto empresarial obrigatório') < text.indexOf('existing host instructions'), `${role}: company context precedes the host prompt`);
+    assert.equal(text.split('Contexto empresarial obrigatório').length - 1, 1, `${role}: company context is not duplicated`);
+  }
+  assert.deepEqual(seen, ['/work', '/work', '/work'], 'the create cwd is what binds the company');
+});
+
+test('agent.create: company context is appended to the newline-terminated bundle without a blank join; a null context is byte-identical to no seam', async t => {
+  const plain = makeInjection(t);
+  const bare = await plain.injection.agentCreate(createReq('slp-claude-lead'));
+  const joined = makeInjection(t, { fixture: plain.fixture, deps: { companyContext: () => 'company line' } });
+  const withContext = await joined.injection.agentCreate(createReq('slp-claude-lead'));
+  assert.ok(bare.config.systemPrompt.endsWith('\n'), 'the role bundle is newline-terminated');
+  assert.equal(withContext.config.systemPrompt, bare.config.systemPrompt + 'company line');
+  const none = makeInjection(t, { fixture: plain.fixture, deps: { companyContext: () => null } });
+  assert.deepEqual(await none.injection.agentCreate(createReq('slp-claude-lead')), bare);
+});
+
+test('agent.create: a corporate repository fails closed on ACP wrapper providers and never mints', async t => {
+  let mints = 0;
+  const { injection } = makeInjection(t, {
+    deps: { companyContext: () => '\ncompany\n', deskMint: async () => { mints += 1; return null; } },
+  });
+  for (const id of WRAPPER_IDS) {
+    await assert.rejects(injection.agentCreate(createReq(id)), /corporate ACP wrapper lacks verified company-policy injection/, id);
+  }
+  assert.equal(mints, 0, 'no desk handle is minted for a corporate wrapper create');
+  const open = makeInjection(t, { deps: { companyContext: () => null, deskMint: async () => { mints += 1; return null; } } });
+  await open.injection.agentCreate(createReq('slp-devin-peer'));
+  assert.equal(mints, 1, 'without a company context the wrapper path is unchanged');
+});
+
 // ---------------------------------------------------------------------------
 // agent.create — per-create candidate verification (O1)
 // ---------------------------------------------------------------------------
