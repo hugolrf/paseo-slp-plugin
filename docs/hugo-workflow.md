@@ -22,6 +22,7 @@ TRIAGEM → PLANEJAMENTO → IMPLEMENTAÇÃO → REVISÃO → QA → PRONTO_PARA
 ## Base por empresa (regra obrigatória, todos os papéis)
 Espelha os agentes do Multica, que têm regras próprias por empresa. Antes de agir, todo papel (Supervisor, Líder, Peer) identifica a empresa pelo repositório, lê as fontes dela (Cérebro: `_Inicio.md` → `_Protocolo.md` → `Projetos/<Empresa>/_mapa.md` → Decisoes/Acessos/Riscos; Multica da empresa, só leitura; origem Azure/Jira) e aplica as regras da empresa: identidade git, fluxo de branch/tag/produção, portão de Quality, nomenclatura e aprovação de publicação. Falta de acesso a uma fonte é `CAPABILITY_GAP`, nunca prosseguir às cegas; evidência, estado e identidade de uma empresa não valem para outra.
 - A regra cross-project é `src/common.md` (vai a todos os papéis, inclusive Peer) e não nomeia empresa nem fonte do Hugo.
+- No host do Hugo as instruções globais sempre nomeiam Cérebro, Multica e origem; logo o ramo “sem fonte nomeada” (o repositório sozinho fundamenta o trabalho) não se aplica lá.
 - Fontes, identidade e regras de cada empresa não são copiadas para a política de papéis: vêm do contexto empresarial por empresa que o host injeta (registro `~/.config/equipes/companies.json`, vinculado pelo Git common-dir e pelo hash da origem) e do Cérebro (`Skills/Multica/hugo-<empresa>-cliente`, fonte única também para o Multica). Enquanto o contexto empresarial não estiver integrado, Supervisor/Líder passam a empresa, a identidade e as fontes no assignment e o Peer as confirma no handback.
 
 ## Integrações e fonte da verdade

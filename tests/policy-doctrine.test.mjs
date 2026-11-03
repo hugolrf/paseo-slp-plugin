@@ -479,12 +479,14 @@ test('project grounding binds every role, names no Human-specific source and rea
     /Project grounding: before acting on a repository, identify its organization and project from the repository \(remote, path, workspace\)/,
     /the Human, Workspace Protocol, injected company context or assignment name \(memory vault, work tracker, origin system\)/,
     /Read them; reading grants no writes/,
-    /Check open work, to avoid duplicating or contradicting it, and the item's real state at its origin before acting/,
+    /In those sources, check open work, to avoid duplicating or contradicting it, and the item's real state at its origin before acting/,
     /Apply that organization's own rules: git identity, branch\/tag\/production flow, quality gate, naming, publication approval/,
     /Evidence, state and identity of one organization never hold for another/,
-    /With no source named, or one you cannot read, record a CAPABILITY_GAP and BLOCK dependent work; never proceed as if grounded/,
+    /A named source you cannot read is a CAPABILITY_GAP: record it and BLOCK dependent work; never proceed as if grounded/,
+    /With no source named, the repository alone grounds the work; say so in the handback/,
     /A receiver verifies the grounding it was given against the repository/);
   assert.doesNotMatch(read('src/common.md'), /Supervisor\/Lead carry the grounding/, 'one normative place for the relay: the role files');
+  assert.doesNotMatch(read('src/common.md'), /no source named[^.]*BLOCK/u, 'a repository without named sources is still grounded by the repository itself');
   assert.doesNotMatch(read('src/common.md'), /read-only/u, 'reading grounding sources must not forbid writes granted elsewhere');
   const humanSpecific = /Hugo|C[ée]rebro|Multica|CemigSim|DWLaw|TCERO|Azure|Jira|fourtime\.dev1|hugolrf@gmail/iu;
   for (const path of ['src/common.md', 'src/roles/peer.md', 'src/roles/lead.md'])
@@ -497,7 +499,7 @@ test('project grounding binds every role, names no Human-specific source and rea
 
 test('seat formation policy stays within frozen per-file and total word budgets', () => {
   const caps = {
-  "src/common.md": 678,
+  "src/common.md": 695,
   "src/delegation.md": 750,
   "src/roles/supervisor.md": 402,
   "src/roles/lead.md": 501,
@@ -519,5 +521,5 @@ test('seat formation policy stays within frozen per-file and total word budgets'
   for (const [path, cap] of Object.entries(caps)) assert.ok(words(raw(path)) <= cap, `${path} exceeds ${cap} words`);
   const all = installUnitPaths(root).filter(path => path.startsWith('src/') && path.endsWith('.md'));
   assert.deepEqual([...all].sort(), Object.keys(caps).sort(), 'account for every installed policy file');
-  assert.ok(all.reduce((total, path) => total + words(raw(path)), 0) <= 11592, 'frozen total policy word ceiling; pruning needs no filler');
+  assert.ok(all.reduce((total, path) => total + words(raw(path)), 0) <= 11609, 'frozen total policy word ceiling; pruning needs no filler');
 });
