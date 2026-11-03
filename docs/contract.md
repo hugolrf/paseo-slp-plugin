@@ -166,7 +166,10 @@ without build dependencies. [Development](development.md#testing) owns checks.
 The current Human assignment supplies outcome, scope, phase/grants, proof and
 handback. Common policy owns authority, language, host boundaries, one writer,
 required gates, inbound route, Human stop and recovery; delegation owns the
-direct-Lead-write exception. Roles carry responsibilities and decision triggers;
+direct-Lead-write exception; common policy also owns project grounding
+(organization sources, identity, no evidence across organizations); sources
+and rules of each organization come from the host, not from role policy. Roles
+carry responsibilities and decision triggers;
 conditional references own procedures. [Role source](../src/common.md),
 [delegation](../src/delegation.md) and the effective workspace protocol own
 behavior; this file maps their implementation and verification owners.

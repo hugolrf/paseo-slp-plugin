@@ -19,6 +19,11 @@ TRIAGEM → PLANEJAMENTO → IMPLEMENTAÇÃO → REVISÃO → QA → PRONTO_PARA
 - PRONTO não é PRODUÇÃO. Merge, deploy, tag, publicação e alterações em origem/Multica/Teams passam pelos gates existentes de autorização.
 - O estado do SLP deve espelhar execução, não sobrescrever os estados oficiais; atualizar cards somente pelo fluxo `foco_propor` → aprovação → `foco_publicar`.
 
+## Base por empresa (regra obrigatória, todos os papéis)
+Espelha os agentes do Multica, que têm regras próprias por empresa. Antes de agir, todo papel (Supervisor, Líder, Peer) identifica a empresa pelo repositório, lê as fontes dela (Cérebro: `_Inicio.md` → `_Protocolo.md` → `Projetos/<Empresa>/_mapa.md` → Decisoes/Acessos/Riscos; Multica da empresa, só leitura; origem Azure/Jira) e aplica as regras da empresa: identidade git, fluxo de branch/tag/produção, portão de Quality, nomenclatura e aprovação de publicação. Falta de acesso a uma fonte é `CAPABILITY_GAP`, nunca prosseguir às cegas; evidência, estado e identidade de uma empresa não valem para outra.
+- A regra cross-project é `src/common.md` (vai a todos os papéis, inclusive Peer) e não nomeia empresa nem fonte do Hugo.
+- Fontes, identidade e regras de cada empresa não são copiadas para a política de papéis: vêm do contexto empresarial por empresa que o host injeta (registro `~/.config/equipes/companies.json`, vinculado pelo Git common-dir e pelo hash da origem) e do Cérebro (`Skills/Multica/hugo-<empresa>-cliente`, fonte única também para o Multica). Enquanto o contexto empresarial não estiver integrado, Supervisor/Líder passam a empresa, a identidade e as fontes no assignment e o Peer as confirma no handback.
+
 ## Integrações e fonte da verdade
 - **Tarefa, status, evidências**: Multica; **pedido do cliente**: Azure DevOps/Jira; **contexto**: Cérebro/Obsidian; **execução**: Paseo.
 - Adapters de leitura reaproveitam o plugin `tasks` e o motor `foco`; nenhuma credencial ou token no repositório.

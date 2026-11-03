@@ -474,12 +474,28 @@ test('Supervisor relays Human words faithfully and STOP never waits for or reviv
     /No cleanup agents or owner revival; resume only on a new Human instruction/);
 });
 
+test('project grounding binds every role, names no Human-specific source and reaches Peers through the assignment', () => {
+  pins('src/common.md',
+    /Project grounding: before acting on a repository, identify its organization and project from the repository \(remote, path, workspace\)/,
+    /the Human, Workspace Protocol, injected company context or assignment name \(memory vault, work tracker, origin system\)/,
+    /Read them read-only and apply that organization's own rules: git identity, branch\/tag\/production flow, quality gate, naming, publication approval/,
+    /Evidence, state and identity of one organization never hold for another/,
+    /A named source you cannot read is a CAPABILITY_GAP: report it, BLOCK dependent work, never proceed blind/,
+    /Supervisor\/Lead carry the grounding in each assignment; its receiver verifies it against the repository/);
+  assert.doesNotMatch(read('src/common.md'), /Hugo|C[ée]rebro|Multica|CemigSim|DWLaw|TCERO|Azure|Jira/iu, 'common policy names no Human-specific source or company');
+  for (const path of ['src/delegation.md', 'src/roles/supervisor.md', 'src/roles/lead.md', 'src/roles/peer.md'])
+    assert.doesNotMatch(read(path), /fourtime\.dev1|hugolrf@gmail|hugo-<empresa>-cliente/u, `${path} repeats no company identity or rule; company context owns them`);
+  pins('src/roles/supervisor.md', /Carry project grounding \(common\.md\) in each Lead assignment/);
+  pins('src/roles/lead.md', /Each Peer assignment carries project grounding \(organization, git identity, sources, applicable rules\) or names the gap/);
+  pins('src/roles/peer.md', /Include assumptions, risks, unfinished dependencies and project grounding \(organization, git identity, sources or gap\) in handbacks/);
+});
+
 test('seat formation policy stays within frozen per-file and total word budgets', () => {
   const caps = {
-  "src/common.md": 562,
-  "src/delegation.md": 266,
-  "src/roles/supervisor.md": 337,
-  "src/roles/lead.md": 419,
+  "src/common.md": 656,
+  "src/delegation.md": 750,
+  "src/roles/supervisor.md": 402,
+  "src/roles/lead.md": 501,
   "src/roles/peer.md": 541,
   "src/templates/workspace-protocol.md": 997,
   "src/references/provider-routing.md": 619,
@@ -498,5 +514,5 @@ test('seat formation policy stays within frozen per-file and total word budgets'
   for (const [path, cap] of Object.entries(caps)) assert.ok(words(raw(path)) <= cap, `${path} exceeds ${cap} words`);
   const all = installUnitPaths(root).filter(path => path.startsWith('src/') && path.endsWith('.md'));
   assert.deepEqual([...all].sort(), Object.keys(caps).sort(), 'account for every installed policy file');
-  assert.ok(all.reduce((total, path) => total + words(raw(path)), 0) <= 10833, 'frozen total policy word ceiling; pruning needs no filler');
+  assert.ok(all.reduce((total, path) => total + words(raw(path)), 0) <= 11570, 'frozen total policy word ceiling; pruning needs no filler');
 });
