@@ -26,3 +26,26 @@ test("catálogo usa traduções exatas e a auditoria inventaria toda pendência 
   assert.equal(TECHNICAL_UI_LITERALS.size, 26);
 });
 
+
+// Carrega o ptBR() real: transpila pt-br.ts e substitui react/react-native por stubs.
+async function loadPtBR() {
+  const { createRequire } = await import("node:module");
+  const ts = (await import("typescript")).default;
+  const source = readFileSync(new URL("../plugin/client/pt-br.ts", import.meta.url), "utf8");
+  const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } });
+  const module = { exports: {} };
+  const stubs = { react: { createElement: () => null }, "react-native": { Text: () => null } };
+  new Function("exports", "require", "module", outputText)(module.exports, name => stubs[name], module);
+  return module.exports.ptBR;
+}
+
+test("mensagens de erro do pool de peers vindas do servidor são traduzidas na renderização com sufixo preservado", async () => {
+  const ptBR = await loadPtBR();
+  assert.equal(ptBR("peer pool unreadable: EACCES: permission denied, open '/x/pool.json'"), "Pool de Peers ilegível: EACCES: permission denied, open '/x/pool.json'");
+  assert.equal(ptBR("peer pool failed schema validation: Required"), "O pool de Peers falhou na validação do esquema: Required");
+  assert.equal(ptBR("peer pool is not valid JSON: Unexpected token } in JSON at position 4"), "O pool de Peers não é um JSON válido: Unexpected token } in JSON at position 4");
+  assert.equal(ptBR("peer pool changed since it was read — reload before saving"), "O pool de Peers mudou desde a leitura — recarregue antes de salvar");
+  // A detecção CAS em peer-pool.tsx usa a mensagem crua, antes da tradução.
+  const card = readFileSync(new URL("../plugin/client/cards/peer-pool.tsx", import.meta.url), "utf8");
+  assert.match(card, /message\.includes\("peer pool changed"\)/);
+});
