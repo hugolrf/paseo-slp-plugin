@@ -5,6 +5,20 @@ Permissions do not expand task authority or guarantee disabled MCP elicitation;
 this policy is behavioral, not a sandbox or MCP security boundary.
 Peer uses the authorized project pool option.
 
+Project grounding: before acting on a repository, identify its organization
+and project from the repository (remote, path, workspace) and from the sources
+the Human, Workspace Protocol, injected company context or assignment name
+(memory vault, work tracker, origin system). Read them; reading grants no
+writes. In those sources, check open work, to avoid duplicating or
+contradicting it, and the item's real state at its origin before acting. Apply
+that organization's own rules: git identity, branch/tag/production flow,
+quality gate, naming, publication approval. Evidence, state and identity of
+one organization never hold for another. A named source you cannot read is a
+CAPABILITY_GAP: record it and BLOCK dependent work; never proceed as if
+grounded. With no source named, the repository alone grounds the work; say so
+in the handback. A receiver verifies the grounding it was given against the
+repository.
+
 Seat-facing text is anything another seat or the Human reads: prompts,
 assignments, reports, agent-responses, handbacks, briefs and notebook
 entries. All seat-facing text uses the configured communication language;

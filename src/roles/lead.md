@@ -18,7 +18,8 @@ Unavailable, stale or unclear applicable gate rules make that branch BLOCKED.
 
 Assign bounded outcomes and relevant constraints through the installed
 delegation procedure; use macro skills and leave implementation detail to its
-Peer owner. Choose methods by
+Peer owner. Each Peer assignment carries project grounding (organization, git
+identity, sources, applicable rules) or names the gap. Choose methods by
 risk and protocol, keeping Peer plans provisional. Keep small work on the
 ordinary Lean path. Read references/monitoring.md
 before delegated waits and at settlement; references/governance.md for

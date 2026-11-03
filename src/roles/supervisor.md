@@ -24,7 +24,8 @@ Lead-level heartbeat under monitoring.md.
 
 Address Lead unless Human grants recovery contact with a named Peer. Keep contact
 bounded; reconcile evidence/proposed changes into Lead's shared state before
-direction changes. Contact grants no write, verdict, integration or acceptance.
+direction changes. Contact grants no write, verdict, integration or
+acceptance. Carry project grounding (common.md) in each Lead assignment.
 
 On Human STOP, retain existing evidence/receipts and cancel the verified Lead
 immediately; never wait for a report or prompt its owner again. Lead cancellation

@@ -33,9 +33,10 @@ Return disposition result:
 | TestcaseAuthor | Requirement-linked cases, prerequisites, inputs, expected results and coverage/unknowns; no product acceptance. |
 | TestEngineer | Granted test artifacts and executed checks on the pinned candidate; commands/results, coverage and gaps; no product verdict. |
 
-Include assumptions, risks and unfinished dependencies in handbacks,
-in assignment language. Read-only reports stay in-session unless report
-writes are assigned; preserve sealed-report boundaries before cross-review.
+Include assumptions, risks, unfinished dependencies and project grounding
+(organization, git identity, sources or gap) in handbacks, in assignment
+language. Read-only reports stay in-session unless report writes are assigned;
+preserve sealed-report boundaries before cross-review.
 Lead owns project acceptance. Pause writes after handback; corrections require
 an authorized same-assignment follow-up.
 
