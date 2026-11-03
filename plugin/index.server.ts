@@ -25,6 +25,7 @@ import { createExecutableResolver } from "./server/executables.ts";
 import { createLauncherBuilder } from "./server/launchers.ts";
 import { createJournal } from "./server/journal.ts";
 import { createRoleInjection } from "./server/role-injection.ts";
+import { companyContextForCwd } from "./server/company-context.ts";
 import { createEnforcement } from "./server/enforcement.ts";
 import { recoverLockView } from "./server/desk-recovery.ts";
 import { readRuntimePinView } from "./server/runtime-pin.ts";
@@ -180,6 +181,7 @@ export default function contribute(server: Parameters<PluginServerContribution>[
     stableRoot: join(realpathSync(detectDaemonHome().daemonHome), "slp-runtime"),
   });
   const injection = createRoleInjection({
+    companyContext: companyContextForCwd,
     readActiveBinding: () => readActiveBinding(journal),
     // O1: the create-hook re-verifies the published candidate (cached once
     // per sha) before importing its role bundle — same verifyPublished the

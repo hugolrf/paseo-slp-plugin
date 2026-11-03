@@ -89,6 +89,8 @@ export interface RoleInjectionDeps {
   importModule?: (specifier: string) => Promise<RoleBundleModule>;
   /** Grant-token derivation seam for tests; must return a non-empty token. */
   grantToken?: (request: { agentId: string; reason: string }) => string;
+  /** Site-specific policy resolves a company's exact Git identity. */
+  companyContext?: (cwd: string | undefined) => string | null;
   /** P2-c desk seams — both optional and asynchronous; absent means the
    *  pre-P2-c behavior byte-for-byte for ordinary requests. Ordinary mint
    *  remains fail-open, but a reserved task create ticket is deliberately
@@ -265,7 +267,11 @@ export function createRoleInjection(deps: RoleInjectionDeps) {
       // into request.env: no config change, no binding, no role bytes. A
       // failed or absent mint returns the request untouched, exactly as
       // before P2-c.
+      const companyContext = deps.companyContext?.(config.cwd) ?? null;
       const wrapper = WRAPPER_PROVIDER.exec(provider);
+      if (wrapper !== null && companyContext !== null) {
+        throw new Error("Equipes: corporate ACP wrapper lacks verified company-policy injection");
+      }
       if (wrapper !== null) {
         const handle = await mintFor({
           provider,
@@ -304,12 +310,14 @@ export function createRoleInjection(deps: RoleInjectionDeps) {
         SLP_DAEMON_HOME: binding.daemonHome,
       });
       const existing = config.systemPrompt;
+      const instructions = companyContext === null ? bundle.instructions :
+        (bundle.instructions.endsWith("\n") ? bundle.instructions : bundle.instructions + "\n") + companyContext;
       const systemPrompt =
         typeof existing === "string" && existing.length > 0
-          ? bundle.instructions.endsWith("\n")
-            ? bundle.instructions + existing
-            : `${bundle.instructions}\n${existing}`
-          : bundle.instructions;
+          ? instructions.endsWith("\n")
+            ? instructions + existing
+            : `${instructions}\n${existing}`
+          : instructions;
       // P2-c — after every fail-closed gate has passed, mint the seat
       // membership; the handle joins the request env only after the
       // seat.mint commit (G1). No handle → the request as before P2-c.
