@@ -6,7 +6,7 @@ import { deliveryTimelineItem } from "./server/delivered-input.ts";
 import type { PluginServerContribution } from "@getpaseo/plugin/server";
 import { realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { activate, reconcile, deactivate, status, localTarget, catalog, setLanguage, getRoleRouting, setRoleRouting, getPeerPool, setPeerPool, getClients, getClientFiles, validateClientsDraft, identifyRepository, explainResolution, setClients, setClientPool, setClientProtocol, getJev, setJev, setJevKey, testJev } from "./shared/contracts.ts";
+import { activate, reconcile, deactivate, status, localTarget, catalog, setLanguage, getRoleRouting, setRoleRouting, getPeerPool, setPeerPool, getClients, getClientFiles, validateClientsDraft, identifyRepository, listClientProjects, explainResolution, setClients, setClientPool, setClientProtocol, getJev, setJev, setJevKey, testJev } from "./shared/contracts.ts";
 import { disableSupervisionNotifications, getSupervision, getSupervisionStatus, setSupervision } from "./shared/supervision.ts";
 import { enforcementStatus, enforcementRecoverLock, enforcementRuntimePin } from "./shared/enforcement.ts";
 import type { Manager } from "./shared/contracts.ts";
@@ -27,6 +27,7 @@ import { createLauncherBuilder } from "./server/launchers.ts";
 import { createJournal } from "./server/journal.ts";
 import { createRoleInjection } from "./server/role-injection.ts";
 import { companyContextForCwd } from "./server/company-context.ts";
+import { clientContextForCwd } from "./server/client-context.ts";
 import { createEnforcement } from "./server/enforcement.ts";
 import { recoverLockView } from "./server/desk-recovery.ts";
 import { readRuntimePinView } from "./server/runtime-pin.ts";
@@ -89,6 +90,7 @@ export default function contribute(server: Parameters<PluginServerContribution>[
   server.handle(getClientFiles, input => clients.getClientFiles(input));
   server.handle(validateClientsDraft, input => clients.validateClientsDraft(input));
   server.handle(identifyRepository, input => clients.identifyRepository(input));
+  server.handle(listClientProjects, input => clients.listClientProjects(input));
   server.handle(explainResolution, input => clients.explainResolution(input));
   server.handle(setClients, input => clients.setClients(input));
   server.handle(setClientPool, input => clients.setClientPool(input));
@@ -197,6 +199,8 @@ export default function contribute(server: Parameters<PluginServerContribution>[
   });
   const injection = createRoleInjection({
     companyContext: companyContextForCwd,
+    // Central client map: strict binding + the client's rules, read at every create (never cached).
+    clientContext: cwd => clientContextForCwd(cwd, detectDaemonHome().daemonHome),
     readActiveBinding: () => readActiveBinding(journal),
     // O1: the create-hook re-verifies the published candidate (cached once
     // per sha) before importing its role bundle — same verifyPublished the

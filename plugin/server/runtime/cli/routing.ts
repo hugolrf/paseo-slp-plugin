@@ -55,6 +55,8 @@ export interface ResolvedCatalog extends Catalog {
   sha256: string;
   /** Present only when the pool came from the central client map. */
   central?: { client: string; directory: string; mapSha256: string };
+  /** Client binding from a version 2 map, whichever rung chose the source; the pin keeps client/mapSha256/rulesSha256 only. */
+  binding?: { client: string; mapSha256: string; rulesSha256: string | null; rules: ClientRules };
   tokenConflicts: ReturnType<typeof catalogTokenConflicts>;
   userPool?: UserPool | null;
   poolDrift?: PoolDrift | null;
@@ -64,7 +66,7 @@ import { readFileSync, lstatSync, realpathSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { homedir } from 'node:os';
 import { hash } from './package.ts';
-import { resolveSourceFor } from './clients.ts';
+import { traceSourceFor, type ClientRules } from './clients.ts';
 import { families, roles, providerId } from './profiles.ts';
 import { settingIdPattern, unsafeModelPattern, rejectRouteKeys, verifyProvider,
   runtimeSettingKeys, profileRouteKeys, swe2ModelPattern } from './binding.ts';
@@ -191,6 +193,13 @@ export function catalogPoolDrift(catalog: Catalog & { sha256: string; userPool?:
 // it names the client and the map revision the pool was read from.
 export const centralWarnings = (catalog: { central?: { client: string; mapSha256: string } }) => catalog.central
   ? [`routing/protocol source central:${catalog.central.client} (map ${catalog.central.mapSha256.slice(0, 8)})`] : [];
+// Client rules reach the agent through the create hook; the receipt only names
+// which rules were pinned (hash prefix). The Git-identity check needs the real
+// checkout, which is not this (routing) repository — launch.ts adds it.
+export function clientWarnings(catalog: Pick<ResolvedCatalog, 'binding'>): string[] {
+  const binding = catalog.binding;
+  return binding?.rulesSha256 ? [`client rules ${binding.client} (${binding.rulesSha256.slice(0, 8)})`] : [];
+}
 
 // Advisory drift lines for one chosen option (or the pool file itself when it
 // cannot be compared). The repository catalog wins either way — the warnings
@@ -234,7 +243,8 @@ export function readCatalog(repository: string, home = paseoHome()): ResolvedCat
   // of its own (and its main checkout has none either). A present map that is
   // invalid, drifted or points at a missing client file throws — it never
   // degrades to the user-scope pool.
-  const central = resolveSourceFor(repository, home)?.source ?? null;
+  const trace = traceSourceFor(repository, home);
+  const central = trace.resolution?.source ?? null;
   let path = repoPath, scope = 'repository', fileStat = stat(repoPath), bytes: string;
   if (central) {
     path = join(central.repository, '.paseo-slp', 'slp-routing.json'); scope = `central:${central.client}`;
@@ -258,7 +268,8 @@ export function readCatalog(repository: string, home = paseoHome()): ResolvedCat
   const sha256 = hash(bytes);
   const userPool = scope === 'repository' ? probeUserPool(home) : null;
   const result: ResolvedCatalog = { ...catalog, path, scope, sha256, tokenConflicts,
-    ...(central ? { central: { client: central.client, directory: central.directory, mapSha256: central.mapSha256 } } : {}) };
+    ...(central ? { central: { client: central.client, directory: central.directory, mapSha256: central.mapSha256 } } : {}),
+    ...(trace.binding && trace.binding.version === 2 ? { binding: { client: trace.binding.client, mapSha256: trace.binding.mapSha256, rulesSha256: trace.binding.rulesSha256, rules: trace.binding.rules } } : {}) };
   if (userPool) Object.assign(result, { userPool, poolDrift: catalogPoolDrift({ ...result, userPool }) });
   return result;
 }
@@ -300,7 +311,10 @@ export function catalogBinding(repository: string, role: string, providers: Prov
   if (Object.hasOwn(route, 'catalogFile')) throw new Error('Routing is repository-scoped; use repository/.paseo-slp/slp-routing.json, not route.catalogFile');
   const catalog = readCatalog(repository, home);
   if (route.catalogSha256 !== catalog.sha256) throw new Error('Routing catalog changed or hash missing; read routes again before selecting');
-  if (catalog.version === 2) return bindPresetCatalog(catalog, role, providers, route, home ?? paseoHome());
+  if (catalog.version === 2) {
+    const bound = bindPresetCatalog(catalog, role, providers, route, home ?? paseoHome());
+    return { ...bound, warnings: [...bound.warnings, ...clientWarnings(catalog)] };
+  }
   if (route.selectionSha256 !== undefined || route.routingContext !== undefined) throw new Error("Preset selection pins require a v2 pool; v1 routing remains unchanged");
   const decision = route.decision as import('./jev.ts').VerifiedJevReceipt | null | undefined;
   const jevConfig = readJevConfig(home ?? paseoHome());
@@ -368,7 +382,7 @@ export function catalogBinding(repository: string, role: string, providers: Prov
   // The repository catalog already won this binding — drift with the live
   // user-scope pool is reported so the two Human-owned sources get
   // reconciled instead of silently diverging.
-  const warnings = [...poolDriftWarnings(catalog.poolDrift, option.id), ...centralWarnings(catalog)];
+  const warnings = [...poolDriftWarnings(catalog.poolDrift, option.id), ...centralWarnings(catalog), ...clientWarnings(catalog)];
   return {
     binding: { provider, model: option.model, modeId: option.modeId, thinkingOptionId: option.thinkingOptionId, features: structuredClone(option.features ?? {}) },
     routing: { catalogFile: catalog.path, catalogScope: catalog.scope, catalogSha256: catalog.sha256, optionId: option.id, jev, ...(route.quotaFallbackFrom ? { quotaFallbackFrom: route.quotaFallbackFrom } : {}), ...(catalog.poolDrift ? { poolDrift: catalog.poolDrift } : {}) },

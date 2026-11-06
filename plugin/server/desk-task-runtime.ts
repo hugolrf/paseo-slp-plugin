@@ -1,4 +1,4 @@
-import { ClientMapError, resolveSourceFor } from "./runtime/cli/clients.ts";
+import { ClientMapError, ladderBinding, resolveSourceFor } from "./runtime/cli/clients.ts";
 import type { Provider } from "./runtime/cli/types.ts";
 import type { PresetRoutingContext } from "./runtime/cli/preset-routing.ts";
 import { reobservePeerReference, type ReferenceHost } from "./peer-reference.ts";
@@ -126,7 +126,7 @@ export function taskProviderInventory(observed: Awaited<ReturnType<typeof observ
 }
 
 type LaunchModule = {
-  FORMATION_CAPABILITIES?: { peerPresets?: number; centralClients?: number };
+  FORMATION_CAPABILITIES?: { peerPresets?: number; centralClients?: number; clientBinding?: number };
   resolveBinding(role: string, request: {
     repository: string;
     assignment: string;
@@ -185,6 +185,13 @@ export function createTaskRuntimeResolver(deps: {
         let central = false;
         try { central = resolveSourceFor(repository, deps.daemonHome) !== null; } catch (error) { central = error instanceof ClientMapError; }
         if (central) return reject("CAPABILITY_GAP", "the bound candidate lacks central client sources required by this repository");
+      }
+      // Same for a client binding (map version 2): a strict map that blocks this
+      // repository, or rules bound to it, would be ignored by an older candidate.
+      if (module.FORMATION_CAPABILITIES?.clientBinding !== 1) {
+        let bound = false;
+        try { bound = ladderBinding({ home: deps.daemonHome, cwd: repository }) !== null; } catch (error) { bound = error instanceof ClientMapError; }
+        if (bound) return reject("CAPABILITY_GAP", "the bound candidate lacks client binding (map version 2) required by this repository");
       }
       const resolved = module.resolveBinding("peer", {
         repository, assignment: "Resolve the task runtime; no work prompt is issued here.",

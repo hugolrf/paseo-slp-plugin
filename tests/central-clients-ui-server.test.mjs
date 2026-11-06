@@ -84,8 +84,13 @@ test('U2: identifyRepository fills the canonical common-dir and origin hash and 
   await f.save(f.map(f.entry('ClienteA', identity.projectSuggestion, identity.gitCommonDir, URL_WITH_TOKEN)));
   assert.equal((await f.call('identifyRepository', { path: worktree })).mappedClient, 'ClienteA');
   await conflict(f.call('identifyRepository', { path: f.dir }), 'INVALID_REQUEST');
+  // P4: a checkout with ZERO remotes is local-only (null origin); remotes without `origin` have no identity to map.
   const noOrigin = join(f.dir, 'work/no-origin'); committedRepository(noOrigin);
-  await conflict(f.call('identifyRepository', { path: noOrigin }), 'INVALID_REQUEST');
+  const localOnly = await f.call('identifyRepository', { path: noOrigin });
+  assert.equal(localOnly.originSha256, null); assert.equal(localOnly.localOnly, true); assert.equal(identity.localOnly, false);
+  const upstreamOnly = join(f.dir, 'work/upstream-only'); committedRepository(upstreamOnly);
+  fixtureGit(upstreamOnly, 'remote', 'add', 'upstream', 'https://git.example.invalid/x/y.git');
+  await conflict(f.call('identifyRepository', { path: upstreamOnly }), 'INVALID_REQUEST');
 });
 
 test('U4: draft validation is the CLI validation — same messages for the same map', async t => {
@@ -319,11 +324,11 @@ test('S1(1): the Desk MCP tool catalog and its whole static import graph exclude
   assert.equal(/clients-store/.test(payload), false);
 });
 
-test('S1(2): slp.mjs commands never reach a client write; `clients validate` is read-only', () => {
+test('S1(2): slp.mjs commands never reach a client write; `clients validate` and `clients check` are read-only', () => {
   const usage = spawnSync(process.execPath, [cli, 'no-such-command'], { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: process.env.HOME } }).stderr;
   const commandsInUsage = usage.replace(/^Usage: slp\.mjs /, '').split(' | ').map(part => part.split(' ')[0]);
   assert.ok(commandsInUsage.includes('clients'));
-  assert.deepEqual(usage.match(/clients [a-z-]+/g), ['clients validate']);
+  assert.deepEqual(usage.match(/clients [a-z-]+/g), ['clients validate', 'clients check']);
   const graph = rel(closure(join(root, 'plugin/server/runtime/cli/cli.ts')));
   assert.ok(graph.includes('plugin/server/runtime/cli/clients.ts'));
   assert.deepEqual(graph.filter(file => /clients-store/.test(file) || file === 'plugin/index.server.ts'), []);
@@ -359,7 +364,7 @@ test('S1(3): RPC inventory — every handler registered in index.server.ts, with
   assert.deepEqual(handlers.map(h => h.name).sort(), [
     'activate', 'catalog', 'deactivate', 'disable-supervision-notifications', 'enforcement-recover-lock', 'enforcement-runtime-pin', 'enforcement-status',
     'explain-resolution', 'get-client-files', 'get-clients', 'get-jev', 'get-peer-pool', 'get-role-routing', 'get-supervision', 'get-supervision-status',
-    'get-workspace-workflow', 'identify-repository', 'local-target', 'reconcile', 'set-client-pool', 'set-client-protocol', 'set-clients', 'set-jev',
+    'get-workspace-workflow', 'identify-repository', 'list-client-projects', 'local-target', 'reconcile', 'set-client-pool', 'set-client-protocol', 'set-clients', 'set-jev',
     'set-jev-key', 'set-language', 'set-peer-pool', 'set-role-routing', 'set-supervision', 'start-workspace-team', 'status', 'test-jev', 'validate-clients-draft',
   ].sort(), 'a new RPC must be added to this inventory deliberately');
   // client writes = handlers whose body calls the store's write methods — enumerated from source
@@ -423,4 +428,147 @@ test('H-c: a new client that reuses a folder left behind by a removed client is 
   const fresh = await f.call('validateClientsDraft', { draft: { kind: 'map', map: { ...removed, clients: { ...removed.clients, ClienteY: { directory: 'clienteY' } } } } });
   assert.equal(fresh.warnings.some(w => /inherits/.test(w)), false);
   void afterRemoval;
+});
+
+// ---------------------------------------------------------------------------
+// P1/P3/P4/P5/P6 on the screen's server: the project list, pending, v2 saves.
+// ---------------------------------------------------------------------------
+const v2 = (f, repos, extra = {}) => ({ version: 2, strict: false, protectedRoots: [], clients: { ClienteA: { directory: 'clienteA' }, ClienteB: { directory: 'clienteB' } }, repositories: repos, ...extra });
+const treeHash = home => readdirSync(home, { recursive: true }).sort().map(p => { try { return `${p}:${sha(readFileSync(join(home, p)))}`; } catch { return `${p}:dir`; } }).join('\n');
+
+test('P1/P3: the project list collapses worktrees into one row, marks pending / bound / blocked / not-git from the paths, and is read-only', async t => {
+  const f = fixture(t);
+  const worktree = join(f.dir, 'work/api-wt'); fixtureGit(f.repo, 'worktree', 'add', '--detach', worktree, 'HEAD');
+  const plain = join(f.dir, 'plain'); mkdirSync(plain);
+  const workspaces = [
+    { id: 'w-api', name: 'api', path: f.repo }, { id: 'w-wt', name: 'api (pr 12)', path: worktree },
+    { id: 'w-other', name: 'other', path: join(f.dir, 'work/other') }, { id: 'w-plain', name: 'plain', path: plain },
+    { id: 'w-gone', name: 'gone', path: join(f.dir, 'does-not-exist') },
+  ];
+  const before = treeHash(f.home);
+  const none = await f.call('listClientProjects', { workspaces });
+  assert.equal(none.mapState, 'absent'); assert.equal(none.strict, false);
+  const byName = rows => Object.fromEntries(rows.projects.map(row => [row.name, row]));
+  assert.equal(none.projects.length, 4, 'api + its worktree are one row');
+  const api = none.projects.find(row => row.gitCommonDir === f.commonDir);
+  assert.deepEqual(api.workspaceIds.sort(), ['w-api', 'w-wt']); assert.equal(api.paths.length, 2); assert.equal(api.state, 'pending'); assert.equal(api.originSha256, sha(URL_WITH_TOKEN));
+  assert.equal(JSON.stringify(none).includes('SECRET-TOKEN'), false, 'no credential ever leaves the server');
+  assert.equal(byName(none).plain.state, 'not-git'); assert.equal(byName(none).gone.state, 'blocked');
+  assert.equal(none.pending, 2);
+  assert.equal(treeHash(f.home), before, 'listing writes nothing');
+  await f.save(f.map(f.entry('ClienteA', 'grupo/api', f.commonDir, URL_WITH_TOKEN)));
+  const saved = await f.call('listClientProjects', { workspaces });
+  assert.equal(saved.mapState, 'valid'); assert.equal(saved.pending, 1);
+  const boundApi = saved.projects.find(row => row.gitCommonDir === f.commonDir);
+  assert.equal(boundApi.state, 'bound'); assert.equal(boundApi.client, 'ClienteA'); assert.equal(boundApi.projectSuggestion, 'grupo/api');
+  assert.equal(saved.projects.find(row => row.gitCommonDir === f.otherCommon).state, 'pending');
+  assert.equal(saved.projects.find(row => row.gitCommonDir === f.otherCommon).code, null, 'pending is informational while the map is not strict');
+});
+
+test('P2/P3: under a strict map the pending rows carry CLIENT_UNMAPPED, a drifted entry is blocked, and the list never blocks creating anything', async t => {
+  const f = fixture(t);
+  await f.save(v2(f, [f.entry('ClienteA', 'grupo/api', f.commonDir, URL_WITH_TOKEN)], { strict: true }));
+  const workspaces = [{ id: 'a', name: 'api', path: f.repo }, { id: 'o', name: 'other', path: join(f.dir, 'work/other') }];
+  const list = await f.call('listClientProjects', { workspaces });
+  assert.equal(list.strict, true); assert.equal(list.pending, 1);
+  const pending = list.projects.find(row => row.gitCommonDir === f.otherCommon);
+  assert.equal(pending.state, 'pending'); assert.equal(pending.code, 'CLIENT_UNMAPPED'); assert.match(pending.reason, /strict map/);
+  fixtureGit(f.repo, 'remote', 'set-url', 'origin', 'https://git.example.invalid/mudou/de-lugar.git');
+  const drift = (await f.call('listClientProjects', { workspaces })).projects.find(row => row.gitCommonDir === f.commonDir);
+  assert.equal(drift.state, 'blocked'); assert.equal(drift.code, 'CLIENT_IDENTITY_DRIFT'); assert.equal(drift.client, 'ClienteA');
+  assert.ok(drift.originSha256, 'the identity facts of the checkout are still offered so the Human can re-bind it');
+});
+
+test('P4: local-only repositories are listed with localOnly, saved with a null origin, and blocked as drift once a remote appears', async t => {
+  const f = fixture(t);
+  const local = join(f.dir, 'work/local'); const localCommon = committedRepository(local);
+  const id = await f.call('identifyRepository', { path: local });
+  assert.deepEqual([id.originSha256, id.localOnly], [null, true]);
+  await f.save(v2(f, [{ client: 'ClienteA', project: 'local', gitCommonDir: localCommon, originSha256: null }]));
+  const workspaces = [{ id: 'l', name: 'local', path: local }];
+  const bound = (await f.call('listClientProjects', { workspaces })).projects[0];
+  assert.equal(bound.state, 'bound'); assert.equal(bound.localOnly, true); assert.equal(bound.originSha256, null);
+  fixtureGit(local, 'remote', 'add', 'origin', 'https://git.example.invalid/novo/remote.git');
+  const drift = (await f.call('listClientProjects', { workspaces })).projects[0];
+  assert.equal(drift.state, 'blocked'); assert.match(drift.reason, /local-only now has a remote/);
+  const preview = await f.call('validateClientsDraft', { draft: { kind: 'map', map: v2(f, [{ client: 'ClienteA', project: 'local', gitCommonDir: localCommon, originSha256: null }]) } });
+  assert.equal(preview.ok, false, 'saving a local-only entry whose repository now has a remote is refused');
+  assert.match(preview.errors.join('\n'), /declared local-only but now has a remote/);
+});
+
+test('P5: a v2 save is validated, confirmed, CAS-guarded and audited without content; getClients returns the rendered rules per client and the strict flag', async t => {
+  const f = fixture(t);
+  const rules = { commitIdentity: { name: 'Nome Exemplo', email: 'exemplo@example.invalid' }, titleFormat: 'origin-id - pt-title', aiFooter: 'forbid' };
+  const draft = v2(f, [f.entry('ClienteA', 'grupo/api', f.commonDir, URL_WITH_TOKEN)], { strict: true, rules,
+    clients: { ClienteA: { directory: 'clienteA', rules: { origin: { kind: 'azure', organization: 'DW', project: 'SAFER' } } }, ClienteB: { directory: 'clienteB', rules: { aiFooter: null } } } });
+  const preview = await f.call('validateClientsDraft', { draft: { kind: 'map', map: draft } });
+  assert.equal(preview.ok, true, JSON.stringify(preview));
+  assert.ok(preview.warnings.some(w => /strict mode: every project without a client is blocked/.test(w)));
+  assert.ok(preview.warnings.some(w => /saved as version 2/.test(w)));
+  const saved = await f.save(draft);
+  assert.equal(saved.map.version, 2);
+  const view = await f.call('getClients', {});
+  assert.equal(view.strict, true); assert.equal(view.map.rules.commitIdentity.name, 'Nome Exemplo');
+  const a = view.clients.find(c => c.name === 'ClienteA'), b = view.clients.find(c => c.name === 'ClienteB');
+  assert.match(a.rulesText, /Azure DevOps, organização DW, projeto SAFER/); assert.match(a.rulesText, /Rodapé de IA proibido/);
+  assert.equal(b.rulesText.includes('Rodapé de IA'), false, 'B switched the footer rule off');
+  assert.match(a.rulesSha256, /^[0-9a-f]{64}$/); assert.notEqual(a.rulesSha256, b.rulesSha256);
+  const lines = f.audit(); assert.equal(JSON.stringify(lines).includes('Nome Exemplo'), false, 'the audit never carries content');
+  assert.equal(JSON.stringify(lines).includes('hugolrf'), false);
+  // impact: changing only B's rules affects B, not A
+  const editB = { ...draft, clients: { ...draft.clients, ClienteB: { directory: 'clienteB', rules: { aiFooter: 'allow' } } } };
+  const impact = await f.call('validateClientsDraft', { draft: { kind: 'map', map: editB } });
+  assert.deepEqual(impact.affectedClients, ['ClienteB']);
+  const editGlobal = { ...draft, rules: { ...rules, aiFooter: 'allow' } };
+  assert.deepEqual((await f.call('validateClientsDraft', { draft: { kind: 'map', map: editGlobal } })).affectedClients, ['ClienteA'], 'a global edit reaches the clients that inherit that key');
+  // a hand-made bad rule is refused by the server whatever the screen sent
+  const bad = await f.call('validateClientsDraft', { draft: { kind: 'map', map: { ...draft, rules: { ...rules, origin: { kind: 'azure', organization: 'x', project: 'y' } } } } });
+  assert.equal(bad.ok, false); assert.match(bad.errors[0], /global rules/);
+});
+
+test('P6: the screen\'s explain and list show the divergence of the checkout against its own client\'s rule, read-only', async t => {
+  const f = fixture(t);
+  const emptyHome = mkdtempSync(join(tmpdir(), 'slp-ident-home-')); t.after(() => rmSync(emptyHome, { recursive: true, force: true }));
+  const previous = process.env.HOME; process.env.HOME = emptyHome; t.after(() => { if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous; });
+  await f.save(v2(f, [f.entry('ClienteA', 'grupo/api', f.commonDir, URL_WITH_TOKEN)],
+    { clients: { ClienteA: { directory: 'clienteA', rules: { commitIdentity: { name: 'Nome Exemplo', email: 'exemplo@example.invalid' } } }, ClienteB: { directory: 'clienteB', rules: { commitIdentity: { name: 'Segredo B', email: 'b@example.invalid' } } } } }));
+  await f.savePool('ClienteA', pool()); await f.saveProtocol('ClienteA', PROTOCOL);
+  fixtureGit(f.repo, 'config', 'user.name', 'Outra Pessoa'); fixtureGit(f.repo, 'config', 'user.email', 'outra@example.invalid');
+  const config = join(f.commonDir, 'config'); const shaBefore = sha(readFileSync(config));
+  const explained = await f.call('explainResolution', { path: f.repo });
+  assert.equal(explained.client, 'ClienteA'); assert.equal(explained.identity.state, 'differs'); assert.equal(explained.identity.expected.name, 'Nome Exemplo');
+  assert.equal(explained.strict, false); assert.equal(JSON.stringify(explained).includes('Segredo B'), false);
+  const row = (await f.call('listClientProjects', { workspaces: [{ id: 'a', name: 'api', path: f.repo }] })).projects[0];
+  assert.equal(row.identity.state, 'differs'); assert.equal(JSON.stringify(row).includes('Segredo B'), false);
+  assert.equal(sha(readFileSync(config)), shaBefore, '.git/config is untouched');
+});
+
+test('P2: the project list RPC and the hook module are read-only and unreachable from the Desk tools and slp.mjs (inventory stays closed)', async () => {
+  const source = readFileSync(join(root, 'plugin/server/runtime/cli/clients.ts'), 'utf8');
+  assert.deepEqual(source.match(/\b(writeFileSync|appendFileSync|renameSync|mkdirSync|rmSync|unlinkSync|copyFileSync|O_WRONLY|O_RDWR|O_CREAT|O_APPEND)\b/g) ?? [], []);
+  const store = readFileSync(join(root, 'plugin/server/clients-store.ts'), 'utf8');
+  const listBody = store.slice(store.indexOf('async function listClientProjects'), store.indexOf('async function explainResolution'));
+  assert.ok(listBody.length > 100); assert.equal(/\b(stage|commitWithAudit|appendAudit|ensureDirs|writeClientFile)\b/.test(listBody), false);
+  const { DESK_TOOL_CATALOG } = await import('../plugin/server/desk-bridge.ts');
+  assert.deepEqual(DESK_TOOL_CATALOG.map(tool => tool.name).filter(name => /client|project/i.test(name)), []);
+});
+
+test('F1: changing the origin identity of an EXISTING entry is never silent: one explicit warning per repository, none for a new entry or an unchanged one', async t => {
+  const f = fixture(t);
+  const local = join(f.dir, 'work/local'); const localCommon = committedRepository(local);
+  const base = v2(f, [f.entry('ClienteA', 'grupo/api', f.commonDir, URL_WITH_TOKEN), { client: 'ClienteA', project: 'local', gitCommonDir: localCommon, originSha256: null }]);
+  await f.save(base);
+  const review = async repos => (await f.call('validateClientsDraft', { draft: { kind: 'map', map: { ...base, repositories: repos } } })).warnings.filter(w => /origin identity changed/.test(w));
+  assert.deepEqual(await review(base.repositories), [], 'unchanged entries do not warn');
+  const changed = await review([{ ...base.repositories[0], originSha256: sha('https://git.example.invalid/outro/lugar.git') }, base.repositories[1]]);
+  assert.equal(changed.length, 1); assert.match(changed[0], /repository grupo\/api/); assert.match(changed[0], new RegExp(`${sha(URL_WITH_TOKEN).slice(0, 12)}… -> ${sha('https://git.example.invalid/outro/lugar.git').slice(0, 12)}…`));
+  const toLocal = await review([{ ...base.repositories[0], originSha256: null }, base.repositories[1]]);
+  assert.match(toLocal[0], /…  *-> local-only \(no remote\)|… -> local-only \(no remote\)/);
+  const fromLocal = await review([base.repositories[0], { ...base.repositories[1], originSha256: sha(URL_WITH_TOKEN) }]);
+  assert.match(fromLocal[0], /local-only \(no remote\) -> [0-9a-f]{12}…/);
+  const both = await review([{ ...base.repositories[0], originSha256: null }, { ...base.repositories[1], originSha256: sha(URL_WITH_TOKEN) }]);
+  assert.equal(both.length, 2, 'one warning per repository');
+  const added = await review([...base.repositories, { client: 'ClienteB', project: 'novo', gitCommonDir: f.otherCommon, originSha256: sha('https://git.example.invalid/outro/app.git') }]);
+  assert.deepEqual(added, [], 'a brand-new entry is not an identity change');
+  assert.equal(f.audit().some(line => /origin identity changed/.test(JSON.stringify(line))), false);
 });

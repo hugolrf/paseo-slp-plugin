@@ -510,8 +510,11 @@ the Lead's own settings, or to another repo's catalog.
 Use it when a client's repositories must not carry SLP configuration. Resolution
 order for routing/protocol: the checkout's own `.paseo-slp/` → its same-Git main
 checkout → the map → gap (a linked worktree) or the user pool (a plain,
-unmapped repository outside `protectedRoots`). The map is opened only when the
-first two have no configuration. No map file means today's behavior.
+unmapped repository outside `protectedRoots`). The map is opened for the source
+only when the first two have no configuration (a version 2 map is also read to
+bind the checkout's client and, when strict, to block a project with no client;
+see [Client binding](#client-binding-strict-mode-local-only-rules-pending-projects-git-identity)).
+No map file means today's behavior.
 
 Layout under the Paseo home (`$PASEO_HOME`, default `~/.paseo`; one per host —
 keep separate Mac and WSL files because `gitCommonDir` is an absolute host path):
@@ -616,30 +619,155 @@ the remote only (never query, fragment, user, password or host), and a new clien
 reuses a folder left by a removed client is warned before saving.
 
 Visual check after installing the plugin (not exercised in this repository's tests,
-which render the card with test doubles): (1) Manager → Clientes shows "No map" and
-creates nothing; (2) add a client and a repository from "Load Paseo workspaces" — the
-common dir and origin hash appear filled, never editable; (3) "Review map change"
-lists the clients that will drift and the invalid items in red, and the confirmed
-save stays disabled until the review is valid; (4) after "Confirm and save map",
-`node bin/slp.mjs clients validate --paseo-home <home>` exits 0 and
-`slp-clients/audit.log` has one line without content; (5) open the client, edit the
-pool (first Save reviews, second Save confirms) and the protocol; (6) "Who resolves
-this folder?" on the repository and on one of its linked worktrees names
-`central:<client>`; (7) switch host (Mac/WSL): each host shows its own map and keeps
-its own unsaved draft; (8) edit a client file by hand and reload — the card shows
-"Changed outside this screen".
+which render the card with test doubles): (1) Manager → Clientes shows "Sem mapa" and
+creates nothing; the first edit starts a version 2 draft with strict mode on and the
+suggested global rules (`origin-id - pt-title`, AI footer forbidden; no commit identity is suggested — define it yourself) — nothing is
+saved yet; (2) "Projetos do Paseo" lists every project of the host, collapsed by
+repository, with "N sem cliente" next to the title, "Somente local" on a repository
+without remote and "Identidade Git diverge" where the Git identity differs from the
+client's rule; (3) add a client, pick it under "Vincular a:", press "Selecionar todos sem
+cliente" and "Vincular os selecionados ao cliente escolhido" — the rows show "Alterado no
+rascunho" and the strict warning count drops; "Vincular ao cliente escolhido" binds one
+row and "Remover vínculo do rascunho" undoes it; (4) the common dir and origin hash are
+filled by the server, never editable; (5) "Revisar alteração do mapa" lists the clients
+that will drift, the strict-mode and version 2 warnings and invalid items in red, and
+the confirmed save stays disabled until the review is valid; (6) after "Confirmar e
+salvar o mapa", `node bin/slp.mjs clients validate --paseo-home <home>` exits 0,
+`slp-clients/audit.log` has one line without content, `node bin/slp.mjs clients check
+<repository>` names the client, and a new `slp-*` agent in an unbound project is refused
+with "mapeie o projeto na tela Clientes" while creating the project itself still works;
+(7) open the client: edit its rules (Herdar / Desligar / Definir per key), the Peer pool
+and the protocol — "O que os agentes deste cliente recebem" shows the rendered block
+and the next agent created in its repositories carries it; (8) "Quem resolve esta
+pasta?" on the repository and on one of its linked worktrees names `central:<client>`
+(or the local source) and shows the strict flag, local-only and the Git identity;
+(9) switch host (Mac/WSL): each host shows its own map and keeps its own unsaved draft;
+(10) edit a client file by hand and reload — the card shows "Alterado fora desta tela".
 
 RPCs registered in `plugin/index.server.ts` (`S` = writes state, `R` = read-only,
 `N` = explicit network action): `activate` S, `reconcile` S, `deactivate` S, `status` R,
 `local-target` R, `get-workspace-workflow` R, `start-workspace-team` S, `catalog` R,
 `set-language` S, `get-role-routing` R, `set-role-routing` S, `get-peer-pool` R,
 `set-peer-pool` S, `get-clients` R, `get-client-files` R, `validate-clients-draft` R,
-`identify-repository` R, `explain-resolution` R, **`set-clients` S, `set-client-pool` S,
+`identify-repository` R, `list-client-projects` R, `explain-resolution` R, **`set-clients` S, `set-client-pool` S,
 `set-client-protocol` S**, `get-jev` R, `set-jev` S, `set-jev-key` S, `test-jev` N,
 `get-supervision` R, `set-supervision` S, `get-supervision-status` R,
 `disable-supervision-notifications` S, `enforcement-status` R,
 `enforcement-recover-lock` S, `enforcement-runtime-pin` R. A test fails when an RPC is
 added without updating this inventory.
+
+### Client binding: strict mode, local-only, rules, pending projects, Git identity
+
+Map **version 2** adds a *binding* of each repository to its client on top of the
+source ladder above; the ladder (own configuration → main checkout → map → gap or
+user pool) does not change. Version 1 maps stay valid byte for byte: no `strict`
+key reads as `strict: false`, they carry no rules, and nothing in their seats, pins,
+`clients validate` output or `routes` output changes (a test keeps the real 39-entry
+map as a golden). A map created on the Clientes screen is born version 2 with
+`strict: true`; an existing version 1 map is only converted when the Human uses a
+version 2 feature (strict, rules, local-only) and saves.
+
+```json
+{
+  "version": 2, "strict": true, "protectedRoots": [],
+  "rules": { "commitIdentity": { "name": "Nome Exemplo", "email": "exemplo@example.invalid" },
+             "titleFormat": "origin-id - pt-title", "aiFooter": "forbid" },
+  "clients": { "ClienteA": { "directory": "clienteA",
+      "rules": { "aiFooter": "allow", "origin": { "kind": "azure", "organization": "Org", "project": "Proj" } } } },
+  "repositories": [ { "client": "ClienteA", "project": "grupo/api", "gitCommonDir": "/…/.git", "originSha256": "<hex>" },
+                    { "client": "ClienteA", "project": "rascunho", "gitCommonDir": "/…/.git", "originSha256": null } ]
+}
+```
+
+**Strict mode (`strict: true`).** One rule in the map lookup: a Git checkout with no
+entry is `CLIENT_UNMAPPED` — also outside `protectedRoots` and also when it carries its
+own `.paseo-slp/` (the entry is then required; with an entry the local configuration
+still wins the *source*). It blocks `readCatalog`, `routes`, route choices/decisions,
+`prepare`, Peer selection, seat formation (every placement rung), `task deliver` and the
+Clientes diagnosis, and it makes the `agent.create` hook of every `slp-*` provider fail
+closed with "mapeie o projeto na tela Clientes". A directory that is not a Git checkout
+cannot be mapped and is blocked too. **Creating a project or workspace is never
+blocked**; a non-`slp-*` provider is not touched; `clients validate` and reading the map
+never block. Without a map, with a version 1 map, with a map that is invalid (at the
+local/main rungs and in the hook), or with `strict: false`, behavior is exactly today's.
+Consequence: when strict is turned on, every repository you work in — including this
+plugin's own — must be bound first (the screen lists the pending ones and warns in the
+review). A candidate runtime without `FORMATION_CAPABILITIES.clientBinding` is refused
+(CAPABILITY_GAP) wherever a version 2 map binds or blocks the repository, instead of
+reading the map divergently.
+
+**Pending projects.** The Clientes screen asks the host for its workspaces and sends
+only `id`, name and path to `list-client-projects`; the server resolves each path to
+its Git common-dir (worktrees collapse into one row) and returns `bound`, `pending` (no
+entry), `blocked` (the map refuses it, e.g. identity drift) or `not-git`. Pending is
+computed on every read — no state, no dependence on a `workspace.created` event — and
+is only a badge and a count; it never blocks creating the project.
+
+**Local-only repositories.** `originSha256: null` (version 2 only; a version 1 map still
+rejects it) declares a repository with **zero** remotes. If any remote (`origin`,
+`upstream`, …) appears later the repository is `CLIENT_IDENTITY_DRIFT` ("declared
+local-only now has a remote") and `clients validate` and the draft review list it. The
+screen offers a checkout with no remote as local-only; a checkout with remotes but no
+`origin` has no identity to map and is refused with a clear message.
+
+**Rules per client.** `rules` (global) and `clients.<name>.rules` take only these
+optional keys: `commitIdentity {name, email}`, `titleFormat` (the enum
+`origin-id - pt-title`, i.e. "<ID da origem> - <título em português>"), `aiFooter`
+(`forbid`|`allow`) and, on a client only, an informational `origin`
+(`azure {organization, project}`, `jira {site}`, `gitlab {group}`, `github {owner}`; no
+URL, no `@`). The effective set is merged per key, global ← client; a client `null`
+switches a global key off; the global rules cannot carry client data. The block is
+rendered at read time (deterministic pt-BR, ≤ 1.2 KB, never written into a
+`workspace-protocol.md`) and appended to the system prompt of every `slp-*` agent at
+`agent.create`, after the role bundle and any company context; an ACP wrapper provider
+(which cannot carry it) is refused when rules apply. Wherever a formation pins a
+source (a placement, or an inherited main-checkout or central source) the pin gains
+`binding {client, mapSha256, rulesSha256}` at the local, main and central rungs;
+`rulesSha256` hashes the text rendered for **that** client, so editing another client's
+rules moves nothing, while editing yours (or a global key you inherit) reports
+ROUTE_DRIFT at the next step. The receipt warning reads `client rules <client> (<sha8>)`.
+Accepted gap: a rules edit between the last `verify` and the hook's create (milliseconds)
+is not detected.
+
+**Hook reach — host-dependent (CAPABILITY_GAP).** The strict block in the `agent.create`
+hook (the native `create_agent` compatibility path) only holds if the host aborts a create
+when a `before` hook throws and lets the hook finish. In-repo evidence says a throw aborts
+the create (`docs/architecture.md` "Fail-closed", `plugin/server/role-injection.ts`
+header), but the SDK declares `before` handlers with no timeout or failure contract
+(`node_modules/@getpaseo/plugin/dist/server/lifecycle.d.ts:91-93`) and the host
+implementation is not available here, so a hook-time budget or fail-open behavior is
+**unverified**; the "fail-open and budgeted" comment at `plugin/index.server.ts:~195`
+describes the Desk mint, not this block. Do not work around the host. What does not
+depend on it: formation through the Desk (`slp_seat_create`) and `task deliver` are
+blocked by the placement and catalog lookup themselves. To keep the hook cheap, a
+version 1/absent/invalid map returns before Git, a non-strict map with no rule anywhere
+returns before Git, and the strict check for a missing, empty or relative `cwd` needs
+no Git at all (it fails closed).
+
+**Identity of an existing entry never changes silently.** The draft review warns, per
+repository, whenever the origin identity of an entry already in the map changes (hash →
+other hash, hash → local-only, local-only → hash). On the list, a row in
+`CLIENT_IDENTITY_DRIFT` has no ordinary "Vincular"; "Aceitar a nova identidade" is a
+separate step that shows the saved → new identity before it edits the draft.
+
+**Accepted limits, documented.** A local-only entry is anchored by its path only (a
+repository deleted and recreated at the same path without a remote inherits the
+binding; a hash entry would drift). Any change of a version 2 map moves the pin's
+`mapSha256` also at the local and main rungs, not only at the central rung (version 1 is
+unchanged). An ACP wrapper provider is refused when rules apply (availability, not
+integrity). `list-client-projects` accepts up to 1024 paths from its caller and runs
+read-only Git on each. No personal name or e-mail ships in this repository: the screen
+suggests no commit identity; the Human defines it.
+
+**Git identity (read-only).** `slp.mjs clients check <absolute-path> [--paseo-home]`
+compares the checkout's *effective* `user.name`/`user.email` (`git config --get`, so
+`includeIf` and global config count) with the `commitIdentity` of the checkout's **own**
+client and also reports the repository-local values: `ok`, `differs`, `unconfigured` or
+`unknown`; exit 1 for a divergence, an unobservable identity or a blocked binding. The
+same check appears on the Clientes list and diagnosis and as a warning on
+`prepared.warnings` of a formation (never a block). Nothing in SLP writes a Git config —
+a test hashes `.git/config` before and after — and another client's identity is never
+shown. A client without a `commitIdentity` rule has nothing to compare.
 
 ### Ordinary Peer formation through the desk
 

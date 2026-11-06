@@ -18,7 +18,7 @@ import {
   View,
 } from "react-native";
 import { ptBR, Text } from "./pt-br.ts";
-import { activate, catalog, deactivate, reconcile, status, localTarget, setLanguage, getRoleRouting, setRoleRouting, getJev, setJev, setJevKey, testJev, getPeerPool, setPeerPool, getClients, getClientFiles, validateClientsDraft, identifyRepository, explainResolution, setClients, setClientPool, setClientProtocol } from "../shared/contracts.ts";
+import { activate, catalog, deactivate, reconcile, status, localTarget, setLanguage, getRoleRouting, setRoleRouting, getJev, setJev, setJevKey, testJev, getPeerPool, setPeerPool, getClients, getClientFiles, validateClientsDraft, identifyRepository, listClientProjects, explainResolution, setClients, setClientPool, setClientProtocol } from "../shared/contracts.ts";
 import { getSupervision, setSupervision } from "../shared/supervision.ts";
 import { FAMILY_IDS, FAMILY_LABEL, FAMILY_PICKER_ORDER } from "../shared/runtime/families.ts";
 import type { RoleName } from "../shared/runtime/families.ts";
@@ -150,6 +150,7 @@ function ManagerSession({ host, layout, theme, navigation, params = {}, onSectio
   const callGetClientFiles = useRpc(getClientFiles);
   const callValidateClients = useRpc(validateClientsDraft);
   const callIdentify = useRpc(identifyRepository);
+  const callListProjects = useRpc(listClientProjects);
   const callExplain = useRpc(explainResolution);
   const callSetClients = useRpc(setClients);
   const callSetClientPool = useRpc(setClientPool);
@@ -374,7 +375,7 @@ function ManagerSession({ host, layout, theme, navigation, params = {}, onSectio
   // user pool or another client's (its snapshot is keyed by target + client).
   const clientsApi = {
     getClients: callGetClients, getClientFiles: callGetClientFiles, validate: callValidateClients,
-    identify: callIdentify, explain: callExplain, setClients: callSetClients,
+    identify: callIdentify, listProjects: callListProjects, explain: callExplain, setClients: callSetClients,
     setClientPool: callSetClientPool, setClientProtocol: callSetClientProtocol,
     listWorkspaces: async () => (await paseoApi.workspaces.list()).entries.flatMap(entry => {
       const workspace = entry as { id: string; name?: string; workspaceDirectory?: string };

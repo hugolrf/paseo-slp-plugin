@@ -26,6 +26,7 @@ import {
   type GetClientFilesResult,
   type GetClientsResult,
   type IdentifyRepositoryResult,
+  type ListClientProjectsResult,
   type SetClientPoolRequest,
   type SetClientProtocolRequest,
   type SetClientsRequest,
@@ -36,6 +37,7 @@ import {
   GetClientFilesInput,
   GetClientsInput,
   IdentifyRepositoryInput,
+  ListClientProjectsInput,
   SetClientPoolInput,
   SetClientProtocolInput,
   SetClientsInput,
@@ -49,9 +51,13 @@ import {
   CLIENT_FILE_MAX_BYTES,
   ClientMapError,
   checkMapHost,
+  effectiveRules,
   entryForCommonDir,
   identifyCheckout,
+  identityFor,
+  inspectProjects,
   parseClientMap,
+  renderClientRules,
   readBelow,
   readClientMapRaw,
   serializeClientMap,
@@ -207,13 +213,15 @@ export function createClientsStore(deps: ClientsStoreDeps = {}) {
         catch (cause) { problem ??= `invalid Peer pool: ${messageOf(cause)}`; }
       }
       const changed = (file: string, sha: string | null) => { const last = lastWritten(audit, clientFile(directory, file)); return last !== null && sha !== last; };
+      const rulesText = map.version === 2 ? renderClientRules(name, effectiveRules(map, name)) : null;
       return { name, directory, referenced: map.repositories.some(entry => entry.client === name),
         repositories: map.repositories.filter(entry => entry.client === name).length,
         routingSha256: pool.sha256, protocolSha256: protocol.sha256, options, error: problem,
+        rulesText, rulesSha256: rulesText === null ? null : sha256Hex(rulesText),
         externalChange: changed(POOL, pool.sha256) || changed(PROTOCOL, protocol.sha256) };
     });
     return { schemaVersion: 1, canonicalHome: home, mapState: raw === null ? "absent" : map === null ? "invalid" : "valid",
-      mapSha256: raw?.sha256 ?? null, map: map === null ? null : (JSON.parse(serializeClientMap(map)) as NonNullable<GetClientsResult["map"]>), mapError: error, hostErrors: map === null ? [] : checkMapHost(map),
+      mapSha256: raw?.sha256 ?? null, map: map === null ? null : (JSON.parse(serializeClientMap(map)) as NonNullable<GetClientsResult["map"]>), strict: map?.strict ?? false, mapError: error, hostErrors: map === null ? [] : checkMapHost(map),
       mapExternalChange: mapExternal, clients: rows };
   }
 
@@ -253,11 +261,29 @@ export function createClientsStore(deps: ClientsStoreDeps = {}) {
         if (present.length && current.map?.clients[name]?.directory !== directory) warnings.push(`client ${name}: folder ${directory} already contains ${present.join(" and ")}; the new client inherits them`);
         if (missing.length) warnings.push(`client ${name} has no ${missing.join(" and ")} yet: its repositories are blocked until they exist`);
       }
+      // Changing the origin identity of an EXISTING entry (hash→hash, hash→local-only, local-only→hash) switches
+      // the drift guard onto a new identity: never silent, one explicit warning per repository.
+      if (current.map !== null) {
+        const shown = (origin: string | null) => (origin === null ? "local-only (no remote)" : `${origin.slice(0, 12)}…`);
+        for (const entry of map.repositories) {
+          const before = entryForCommonDir(current.map, entry.gitCommonDir);
+          if (before !== undefined && before.originSha256 !== entry.originSha256) {
+            warnings.push(`repository ${entry.project} (${entry.gitCommonDir}): origin identity changed ${shown(before.originSha256)} -> ${shown(entry.originSha256)}; the drift guard for this repository trusts the new identity from this save on`);
+          }
+        }
+      }
+      if (map.version === 2) {
+        if (current.map === null || current.map.version === 1) warnings.push("this map is saved as version 2 (strict mode, local-only repositories, rules); a Peer runtime older than this plugin reads it as invalid, so update the runtime first");
+        if (map.strict) warnings.push("strict mode: every project without a client is blocked at seat formation and at agent creation until it is bound on this screen; creating the project itself is never blocked");
+        if (map.strict && current.map?.strict !== true) warnings.push("strict mode turns on with this save: list the projects and bind the pending ones first");
+      }
       const bytes = serializeClientMap(map);
       const affected = new Set<string>();
       if (current.map !== null) {
         for (const name of new Set([...Object.keys(current.map.clients), ...Object.keys(map.clients)])) {
-          const mine = (m: ClientMap) => JSON.stringify([m.clients[name] ?? null, m.repositories.filter(e => e.client === name).map(e => [e.project, e.gitCommonDir, e.originSha256]).sort()]);
+          // The client entry (incl. its own rules), its repositories and the rules it EFFECTIVELY gets (a global change reaches it too).
+          const mine = (m: ClientMap) => JSON.stringify([m.clients[name] ?? null, m.version === 2 && m.clients[name] ? renderClientRules(name, effectiveRules(m, name)) : null,
+            m.repositories.filter(e => e.client === name).map(e => [e.project, e.gitCommonDir, e.originSha256]).sort()]);
           if (mine(current.map) !== mine(map)) affected.add(name);
         }
         if (JSON.stringify(current.map.protectedRoots) !== JSON.stringify(map.protectedRoots)) for (const name of Object.keys(map.clients)) affected.add(name);
@@ -294,9 +320,17 @@ export function createClientsStore(deps: ClientsStoreDeps = {}) {
     try { identity = identifyCheckout(request.path); }
     catch (error) { throw invalid(messageOf(error)); }
     const { map } = readMap(home);
-    return { schemaVersion: 1, gitCommonDir: identity.gitCommonDir, originSha256: identity.originSha256,
+    return { schemaVersion: 1, gitCommonDir: identity.gitCommonDir, originSha256: identity.originSha256, localOnly: identity.localOnly,
       projectSuggestion: identity.projectSuggestion, linked: identity.linked,
       mappedClient: map === null ? null : entryForCommonDir(map, identity.gitCommonDir)?.client ?? null };
+  }
+
+  /** Every project the screen listed, classified by the server: bound / pending / blocked / not-git. Read-only. */
+  async function listClientProjects(input: unknown): Promise<ListClientProjectsResult> {
+    const request = parseInput(ListClientProjectsInput, "list-client-projects", input);
+    const home = homeOf(request.target);
+    const inventory = inspectProjects(request.workspaces, home);
+    return { schemaVersion: 1, ...inventory };
   }
 
   async function explainResolution(input: unknown): Promise<ExplainResolutionResult> {
@@ -310,14 +344,19 @@ export function createClientsStore(deps: ClientsStoreDeps = {}) {
     try { trace = traceSourceFor(request.path, home); }
     catch (error) {
       if (!(error instanceof ClientMapError)) throw error;
-      return { ...base, decidedBy: "blocked", catalogScope: null, catalogPath: null, formation: "blocked", client: null, code: error.code, reason: error.message };
+      return { ...base, decidedBy: "blocked", catalogScope: null, catalogPath: null, formation: "blocked", client: null, code: error.code, reason: error.message,
+        strict: null, localOnly: null, rulesSha256: null, identity: null };
     }
     let catalogScope: string | null = null, catalogPath: string | null = null, tail = "";
     try { const catalog = readCatalog(request.path, home); catalogScope = catalog.scope; catalogPath = catalog.path; }
     catch (error) { tail = ` (reading the pool failed: ${messageOf(error)})`; }
     const formation = trace.decidedBy === "local" ? "local" : trace.decidedBy === "main" ? "main"
       : trace.decidedBy === "central" || trace.decidedBy === "client-directory" ? "central" : trace.linked === true ? "gap" : "user-pool";
-    return { ...base, decidedBy: trace.decidedBy, catalogScope, catalogPath, formation, client: trace.client ?? null, code: null, reason: `${trace.reason}${tail}` };
+    const binding = trace.binding ?? null;
+    let identity = null;
+    try { identity = identityFor(request.path, binding); } catch { identity = null; }
+    return { ...base, decidedBy: trace.decidedBy, catalogScope, catalogPath, formation, client: trace.client ?? null, code: null, reason: `${trace.reason}${tail}`,
+      strict: binding?.strict ?? null, localOnly: binding?.localOnly ?? null, rulesSha256: binding?.rulesSha256 ?? null, identity };
   }
 
   // ---- writes -----------------------------------------------------------
@@ -381,5 +420,5 @@ export function createClientsStore(deps: ClientsStoreDeps = {}) {
     return { schemaVersion: 1 as const, sha256: sha256Hex(w.bytes) };
   }
 
-  return { getClients, getClientFiles, validateClientsDraft, identifyRepository, explainResolution, setClients, setClientPool, setClientProtocol };
+  return { getClients, getClientFiles, validateClientsDraft, identifyRepository, listClientProjects, explainResolution, setClients, setClientPool, setClientProtocol };
 }

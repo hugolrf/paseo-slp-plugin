@@ -36,7 +36,7 @@ type FormationRequest = {
 };
 type FormationModule = {
   launchPlan(root: string, request: FormationRequest, context?: TrustedLaunchContext): Omit<Plan, "modeSupport">;
-  FORMATION_CAPABILITIES?: { existingPlacement?: number; peerPresets?: number; centralClients?: number };
+  FORMATION_CAPABILITIES?: { existingPlacement?: number; peerPresets?: number; centralClients?: number; clientBinding?: number };
   peerSelectionNeedsCapabilities?: typeof import("./runtime/cli/seat-selection.ts").peerSelectionNeedsCapabilities;
   preflightPeerChoice?: typeof import("./runtime/cli/seat-selection.ts").preflightPeerChoice;
   selectPeerSeat?: typeof import("./runtime/cli/seat-selection.ts").selectPeerSeat;
@@ -161,7 +161,14 @@ export function createFormationPlanner(deps: {
   // older one would read the client directory as a plain repository. The
   // client directory must also live under the home this planner resolves with.
   const requireCentral = (launch: FormationModule, context?: SelectionContext) => {
-    const pinned = [context?.target?.source, context?.source, context?.centralPin].find(pin => pin?.central !== undefined);
+    const pins = [context?.target?.source, context?.source, context?.centralPin].filter((pin): pin is FormationSourcePin => pin !== undefined);
+    // A client binding (map version 2: strict, rules, local-only) is pinned and
+    // read by the candidate; one that predates it would read the map as invalid
+    // or ignore the rules, so it is refused instead of reading divergently.
+    if (pins.some(pin => pin.binding !== undefined) && launch.FORMATION_CAPABILITIES?.clientBinding !== 1) {
+      throw new FormationPlanningError("CAPABILITY_GAP", "bound candidate lacks client binding (map version 2); refusing a divergent read");
+    }
+    const pinned = pins.find(pin => pin.central !== undefined);
     if (pinned === undefined) return;
     if (launch.FORMATION_CAPABILITIES?.centralClients !== 1) {
       throw new FormationPlanningError("CAPABILITY_GAP", "bound candidate lacks central client sources; refusing a divergent read");
@@ -349,7 +356,7 @@ export async function runSeatCreate(row: MembershipValue, input: DeskSeatCreateI
       try {
         await deps.placementCapability();
         const located = await deps.placement.source(row);
-        context = { sourceRepository: located.repository, ...(located.central ? { centralPin: located } : {}) };
+        context = { sourceRepository: located.repository, ...(located.central || located.binding ? { centralPin: located } : {}) };
       }
       catch (error) { return error instanceof FormationPlanningError ? selectionFailure(error) : placementFailure(error); }
     } else if (deps.placement) {

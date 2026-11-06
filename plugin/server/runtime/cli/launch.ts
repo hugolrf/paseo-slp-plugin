@@ -23,7 +23,8 @@ import { join, isAbsolute, basename } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { savedProfileBinding, roleProvider, providerId, profileId, roles } from './profiles.ts';
 import { verifyInstall, snapshot, readJson } from './package.ts';
-import { catalogBinding, readCatalog } from './routing.ts';
+import { catalogBinding, readCatalog, paseoHome } from './routing.ts';
+import { identityFor, identityWarnings, ladderBinding } from './clients.ts';
 import { bindingCheck, dispositionPattern, verifyProvider } from './binding.ts';
 import { roleInstructions, orchestrates, policyLocators, carrierBlock } from './role-bundle.ts';
 import { spawnKit } from './spawn-kit.ts';
@@ -238,6 +239,16 @@ function agentTitle(role: string, disposition: string | undefined, request: Laun
     label.trim(), ...(packet ? ['Handoff'] : [])].join(' — ');
 }
 
+// A version 2 map may carry a commit identity per client: a checkout whose
+// effective Git identity differs is a warning on the receipt, never a block and
+// never a write to its Git config. A map that does not bind the checkout adds nothing.
+function identityNotes(checkout: string, home: string | undefined): string[] {
+  try {
+    const info = ladderBinding({ home: home ?? paseoHome(), cwd: checkout });
+    return info === null ? [] : identityWarnings(info.client, identityFor(checkout, info));
+  } catch { return []; } // a blocking map problem was already raised by the catalog read
+}
+
 // One owner for preparation state and validation operations. Diagnostics retain
 // their historical inventory-first order and continue after individual failures;
 // planning checks request shape first and throws immediately. Nothing is cached
@@ -254,8 +265,10 @@ function prepareInputs(request: LaunchRequest, inspect?: (name: string, fn: () =
     binding: () => {
       const result = resolveBinding(role, context ? { ...merged, repository: context.routingRepository } : merged, disposition);
       roleProvider(role, result.binding?.provider);
-      resolved = result;
-      return result;
+      // The routing repository may be a client directory; the Git identity is the real checkout's. Read-only.
+      const warnings = [...(result.warnings ?? []), ...identityNotes(merged.repository, merged.paseoHome)];
+      resolved = warnings.length === (result.warnings ?? []).length ? result : { ...result, warnings };
+      return resolved;
     },
   };
   const order = inspect
@@ -321,7 +334,7 @@ function plan(root: string, request: LaunchRequest, packet: HandoffPacket | null
   };
 }
 
-export const FORMATION_CAPABILITIES = { existingPlacement: 1, peerPresets: 2, centralClients: 1 } as const;
+export const FORMATION_CAPABILITIES = { existingPlacement: 1, peerPresets: 2, centralClients: 1, clientBinding: 1 } as const;
 export const launchPlan = (root: string, request: LaunchRequest, context?: import('./types.ts').TrustedLaunchContext) => plan(root, request, null, context);
 export const handoffPlan = (root: string, request: LaunchRequest) => plan(root, request, handoffPacket(request));
 

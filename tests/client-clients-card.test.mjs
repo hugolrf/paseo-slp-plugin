@@ -18,6 +18,18 @@ const clientsView = (map, sha = H('1'), extra = {}) => ({ schemaVersion: 1, cano
   clients: map ? Object.entries(map.clients).map(([name, { directory }]) => ({ name, directory, referenced: true, repositories: 1, routingSha256: H('2'), protocolSha256: H('3'), options: 1, error: null, externalChange: false })) : [], ...extra });
 const review = (over = {}) => ({ schemaVersion: 1, ok: true, errors: [], warnings: [], confirm: H('c'), affectedClients: ['ClienteA'], mapHashChanges: true, ...over });
 
+const projectRow = (over = {}) => ({ key: '/work/x/.git', state: 'pending', name: 'x', workspaceIds: ['wx'], paths: ['/work/x'], gitCommonDir: '/work/x/.git', originSha256: H('7'), localOnly: false,
+  projectSuggestion: 'grupo/x', linked: false, client: null, code: null, reason: null, identity: null, ...over });
+const projectsView = (rows, extra = {}) => { const projects = rows ?? [
+  projectRow({ key: '/work/api/.git', state: 'bound', name: 'api', workspaceIds: ['w1', 'w2'], paths: ['/work/api', '/work/api-wt'], gitCommonDir: '/work/api/.git', originSha256: H('a'), projectSuggestion: 'grupo/api', client: 'ClienteA' }),
+  projectRow({ key: '/work/novo/.git', name: 'novo', workspaceIds: ['w3'], paths: ['/work/novo'], gitCommonDir: '/work/novo/.git', originSha256: H('b'), projectSuggestion: 'grupo/novo' }),
+  projectRow({ key: '/work/rascunho/.git', name: 'rascunho', workspaceIds: ['w4'], paths: ['/work/rascunho'], gitCommonDir: '/work/rascunho/.git', originSha256: null, localOnly: true, projectSuggestion: 'rascunho' }),
+  projectRow({ key: 'path:/work/plain', state: 'not-git', name: 'plain', gitCommonDir: null, originSha256: null, projectSuggestion: 'plain' }),
+]; return { schemaVersion: 1, mapState: 'valid', strict: false, pending: projects.filter(r => r.state === 'pending').length, projects, ...extra }; };
+
+const fourWorkspaces = [{ id: 'w1', name: 'api', directory: '/work/api' }, { id: 'w2', name: 'api (pr)', directory: '/work/api-wt' }, { id: 'w3', name: 'novo', directory: '/work/novo' }, { id: 'w4', name: 'rascunho', directory: '/work/rascunho' }];
+const makeProjectApi = (over = {}) => makeApi({ listWorkspaces: async () => fourWorkspaces, ...over });
+
 function makeApi(over = {}) {
   const calls = [];
   const rec = (name, fn) => async input => { calls.push([name, input]); return fn(input); };
@@ -34,6 +46,7 @@ function makeApi(over = {}) {
     setClientPool: rec('setClientPool', async () => ({ sha256: H('8') })),
     setClientProtocol: rec('setClientProtocol', async () => ({ sha256: H('6') })),
     listWorkspaces: rec('listWorkspaces', async () => [{ id: 'w1', name: 'api', directory: '/work/api' }]),
+    listProjects: rec('listProjects', async () => projectsView()),
     ...over,
   };
   return { api, calls, setCurrent: value => { current = value; } };
@@ -360,4 +373,186 @@ test('C2: per-client pool editors keep their drafts apart: B never sees or saves
   assert.deepEqual(card().props.state.opened, ['ClienteB', 'ClienteC']);
   assert.equal(poolOf('ClienteB').poolForm.policy, 'Policy ClienteB'); assert.equal(poolOf('ClienteB').poolDirty, false);
   assert.equal(poolOf('ClienteC').poolForm.policy, 'Policy ClienteC'); assert.equal(poolOf('ClienteC').poolDirty, false);
+});
+
+// ---------------------------------------------------------------------------
+// P1/P2/P3/P4/P5: project list, individual + batch bind, strict, rules, v2
+// ---------------------------------------------------------------------------
+test('P1/P3: the card loads every project from the server on open (workspaces in, rows out), counts the pending ones and shows the draft binding next to the saved one', async t => {
+  const { api, calls } = makeProjectApi();
+  const m = await mount(t, api);
+  const list = calls.find(([n]) => n === 'listProjects')[1];
+  assert.deepEqual(list.workspaces.map(w => [w.id, w.path]), [['w1', '/work/api'], ['w2', '/work/api-wt'], ['w3', '/work/novo'], ['w4', '/work/rascunho']], 'only ids, names and paths go to the server; identity is computed there');
+  assert.equal(m.state().projects.pending, 2); assert.equal(m.state().projectRows.length, 4);
+  assert.equal(m.state().pendingInDraft, 2, 'the not-git row has no common dir and is not counted');
+  const api0 = m.state().projectRows.find(r => r.name === 'api'); assert.deepEqual([api0.draftClient, api0.changed], ['ClienteA', false]);
+});
+
+test('P1: individual bind adds the server-computed identity to the draft; a re-bind replaces the entry; unbind removes it; nothing is saved', async t => {
+  const { api, calls } = makeProjectApi();
+  const m = await mount(t, api);
+  await act(async () => m.state().bindProjects(['/work/novo/.git'], null));
+  assert.match(m.state().errorText, /Choose the client/); assert.equal(m.state().dirty, false);
+  await act(async () => m.state().bindProjects(['/work/novo/.git'], 'ClienteA'));
+  assert.deepEqual(m.state().map.repositories.at(-1), { client: 'ClienteA', project: 'grupo/novo', gitCommonDir: '/work/novo/.git', originSha256: H('b') });
+  assert.equal(m.state().dirty, true); assert.equal(m.state().pendingInDraft, 1);
+  assert.equal(m.state().projectRows.find(r => r.name === 'novo').changed, true);
+  assert.equal(calls.filter(([n]) => n === 'setClients').length, 0);
+  await act(async () => m.state().unbindProject('/work/novo/.git'));
+  assert.equal(m.state().map.repositories.some(r => r.gitCommonDir === '/work/novo/.git'), false);
+  await act(async () => m.state().edit(next => { next.clients.ClienteB = { directory: 'clienteB' }; }));
+  await act(async () => m.state().bindProjects(['/work/api/.git'], 'ClienteB'));
+  const rebound = m.state().map.repositories.filter(r => r.gitCommonDir === '/work/api/.git');
+  assert.deepEqual(rebound.map(r => [r.client, r.project]), [['ClienteB', 'grupo/api']], 'one entry per repository; the project name is kept');
+});
+
+test('P1: batch bind selects several projects (all without a client in one press), binds them to the chosen client in ONE draft edit, and skips what cannot be bound', async t => {
+  const { api } = makeProjectApi();
+  const m = await mount(t, api);
+  await act(async () => m.state().pickPending());
+  assert.deepEqual(m.state().picked.sort(), ['/work/novo/.git', '/work/rascunho/.git']);
+  await act(async () => m.state().pickProject('path:/work/plain', true));
+  await act(async () => m.state().bindProjects(m.state().picked, 'ClienteA'));
+  const added = m.state().map.repositories.filter(r => r.gitCommonDir !== '/work/api/.git');
+  assert.deepEqual(added.map(r => r.gitCommonDir).sort(), ['/work/novo/.git', '/work/rascunho/.git'], 'the not-git row is skipped');
+  assert.equal(m.state().pendingInDraft, 0); assert.deepEqual(m.state().picked, []);
+});
+
+test('P4: binding a local-only project writes originSha256 null and upgrades a version 1 draft to version 2 (strict stays off)', async t => {
+  const { api } = makeProjectApi();
+  const m = await mount(t, api);
+  assert.equal(m.state().map.version, 1);
+  await act(async () => m.state().bindProjects(['/work/novo/.git'], 'ClienteA'));
+  assert.equal(m.state().map.version, 1, 'a project with an origin does not need version 2');
+  await act(async () => m.state().bindProjects(['/work/rascunho/.git'], 'ClienteA'));
+  assert.equal(m.state().map.version, 2); assert.equal(m.state().map.strict, false);
+  assert.equal(m.state().map.repositories.find(r => r.gitCommonDir === '/work/rascunho/.git').originSha256, null);
+});
+
+test('P2: the strict switch edits the draft only, upgrades version 1 to 2, and the review warns what strict will block', async t => {
+  const { api, calls } = makeProjectApi({ validate: async () => review({ warnings: ['strict mode: every project without a client is blocked at seat formation and at agent creation until it is bound on this screen; creating the project itself is never blocked'] }) });
+  const m = await mount(t, api);
+  await act(async () => m.state().setStrict(true));
+  assert.deepEqual([m.state().map.version, m.state().map.strict, m.state().dirty], [2, true, true]);
+  assert.equal(calls.filter(([n]) => n === 'setClients').length, 0);
+  await act(async () => m.state().reviewMap());
+  assert.match(m.state().draft.review.result.warnings[0], /creating the project itself is never blocked/);
+  await act(async () => m.state().setStrict(false));
+  assert.equal(m.state().map.strict, false);
+});
+
+test('P5: rules are edited per scope in the draft: global vs client, inherit (drop key) vs switch off (null), empty holders vanish, and a v1 draft becomes v2', async t => {
+  const { api } = makeProjectApi();
+  const m = await mount(t, api);
+  await act(async () => m.state().setRule(null, 'aiFooter', 'forbid'));
+  assert.deepEqual([m.state().map.version, m.state().map.rules], [2, { aiFooter: 'forbid' }]);
+  await act(async () => m.state().setRule('ClienteA', 'aiFooter', null));
+  assert.deepEqual(m.state().map.clients.ClienteA.rules, { aiFooter: null }, 'null switches the inherited key off');
+  await act(async () => m.state().setRule('ClienteA', 'origin', { kind: 'azure', organization: 'DW', project: 'SAFER' }));
+  await act(async () => m.state().setRule('ClienteA', 'aiFooter', undefined));
+  assert.deepEqual(Object.keys(m.state().map.clients.ClienteA.rules), ['origin'], 'inherit drops the key');
+  await act(async () => m.state().setRule('ClienteA', 'origin', undefined));
+  assert.equal('rules' in m.state().map.clients.ClienteA, false);
+  await act(async () => m.state().setRule(null, 'aiFooter', undefined));
+  assert.equal('rules' in m.state().map, false);
+  await act(async () => m.state().setRule('Inexistente', 'aiFooter', 'allow'));
+  assert.equal(m.state().map.clients.Inexistente, undefined);
+});
+
+test('P2/P5: a map created on this screen is version 2, strict, with the SUGGESTED rules in the draft only (nothing is written until review + confirm)', async t => {
+  const { api, calls, setCurrent } = makeProjectApi();
+  setCurrent(clientsView(null));
+  const m = await mount(t, api);
+  assert.deepEqual([m.state().map.version, m.state().map.strict], [2, true]);
+  assert.deepEqual(m.state().map.rules, { titleFormat: 'origin-id - pt-title', aiFooter: 'forbid' }, 'no personal commit identity is suggested');
+  assert.equal(m.state().dirty, false, 'suggestions are not a pending change by themselves');
+  await act(async () => m.state().addClient('ClienteA', 'clienteA'));
+  assert.equal(m.state().dirty, true);
+  assert.equal(calls.filter(([n]) => n === 'setClients').length, 0);
+  const sent = JSON.stringify(m.state().map);
+  await act(async () => m.state().reviewMap());
+  assert.equal(JSON.stringify(calls.find(([n]) => n === 'validate')[1].draft.map), sent, 'the reviewed bytes are the draft shown');
+});
+
+test('P3: saving the map reloads the project list so pending counts reflect the new binding', async t => {
+  const { api, calls } = makeProjectApi();
+  const m = await mount(t, api);
+  await act(async () => m.state().bindProjects(['/work/novo/.git'], 'ClienteA'));
+  await act(async () => m.state().reviewMap());
+  const before = calls.filter(([n]) => n === 'listProjects').length;
+  await act(async () => m.state().saveMap());
+  assert.equal(calls.filter(([n]) => n === 'listProjects').length, before + 1);
+});
+
+test('P1/P2/P3/P5/P6: the rendered card shows the project list with pending, local-only and identity badges, the strict switch and the rules editors, all in Portuguese', async t => {
+  const rows = [
+    projectRow({ key: '/work/api/.git', state: 'bound', name: 'api', gitCommonDir: '/work/api/.git', client: 'ClienteA', projectSuggestion: 'grupo/api',
+      identity: { state: 'differs', expected: { name: 'Nome Exemplo', email: 'exemplo@example.invalid' }, effective: { name: 'Outra', email: 'outra@example.invalid' }, local: { name: 'Outra', email: 'outra@example.invalid' } } }),
+    projectRow({ key: '/work/rascunho/.git', name: 'rascunho', gitCommonDir: '/work/rascunho/.git', originSha256: null, localOnly: true, projectSuggestion: 'rascunho' }),
+    projectRow({ key: '/work/blocked/.git', state: 'blocked', name: 'bloqueado', gitCommonDir: '/work/blocked/.git', code: 'CLIENT_IDENTITY_DRIFT', reason: 'remote identity drift: origin differs from the client map entry' }),
+  ];
+  const { api } = makeProjectApi({ listProjects: async () => projectsView(rows) });
+  const m = await mount(t, api);
+  await act(async () => m.state().setStrict(true));
+  const mod = m.mod; mod.primitiveState.tree = true;
+  let renderer;
+  await act(async () => { renderer = TestRenderer.create(React.createElement(mod.ClientsCard, { colors, compact: false, state: m.state(), poolSlot: null })); });
+  t.after(async () => { await act(async () => renderer.unmount()); });
+  const strings = [];
+  const walk = node => { if (node === null || node === undefined) return; if (typeof node === 'string') { strings.push(node); return; } if (Array.isArray(node)) { node.forEach(walk); return; } (node.children ?? []).forEach(walk); };
+  walk(renderer.toJSON());
+  const text = strings.join(' | ');
+  for (const expected of [/Projetos do Paseo/, /1 sem cliente/, /Somente local/, /Identidade Git diverge/, /Aviso somente leitura; nada foi alterado/, /Regra: Nome Exemplo/, /no Git: Outra/, /diverge/, /Bloqueado/, /Modo estrito/, /Regras globais/, /Identidade de commit/, /Rodapé de IA/,
+    /O modo estrito está ligado e 2 projeto\(s\) sem cliente neste rascunho/, /Um projeto sem cliente é bloqueado na formação de assentos e na criação de agentes/]) assert.match(text, expected);
+  assert.equal(/Strict mode|Paseo projects|Local only/.test(text), false, 'no English left on the new surface');
+});
+
+test('F1: a row in CLIENT_IDENTITY_DRIFT is never re-fixed by "bind" (single or batch); accepting the new identity is a separate propose/confirm step that edits only the draft', async t => {
+  const rows = [
+    projectRow({ key: '/work/api/.git', state: 'blocked', name: 'api', gitCommonDir: '/work/api/.git', client: 'ClienteA', originSha256: H('e'), code: 'CLIENT_IDENTITY_DRIFT', reason: 'remote identity drift: origin differs from the client map entry' }),
+    projectRow({ key: '/work/rascunho/.git', state: 'blocked', name: 'rascunho', gitCommonDir: '/work/rascunho/.git', client: 'ClienteA', originSha256: null, localOnly: true, code: 'CLIENT_IDENTITY_DRIFT' }),
+    projectRow({ key: '/work/novo/.git', name: 'novo', gitCommonDir: '/work/novo/.git', originSha256: H('b') }),
+  ];
+  const current = clientsView({ ...baseMap(), repositories: [...baseMap().repositories, { client: 'ClienteA', project: 'rascunho', gitCommonDir: '/work/rascunho/.git', originSha256: H('d') }] });
+  const { api, calls, setCurrent } = makeProjectApi({ listProjects: async () => projectsView(rows) });
+  setCurrent(current);
+  const m = await mount(t, api);
+  await act(async () => m.state().bindProjects(['/work/api/.git'], 'ClienteA'));
+  assert.equal(m.state().dirty, false, 'single bind of a drifted row does nothing'); assert.match(m.state().errorText, /None of the selected projects can be bound/);
+  await act(async () => m.state().pickPending());
+  assert.deepEqual(m.state().picked, ['/work/novo/.git'], 'batch selection never includes a drifted row');
+  await act(async () => m.state().bindProjects(['/work/api/.git', '/work/rascunho/.git'], 'ClienteA'));
+  assert.equal(m.state().map.repositories.find(r => r.gitCommonDir === '/work/api/.git').originSha256, H('a'));
+  await act(async () => m.state().acceptIdentity('/work/api/.git'));
+  assert.equal(m.state().dirty, false, 'accepting without proposing first does nothing');
+  await act(async () => m.state().proposeIdentity('/work/api/.git'));
+  assert.deepEqual(m.state().identityChange('/work/api/.git'), { from: H('a'), to: H('e') });
+  await act(async () => m.state().cancelIdentity());
+  await act(async () => m.state().acceptIdentity('/work/api/.git'));
+  assert.equal(m.state().dirty, false, 'cancel really cancels');
+  await act(async () => m.state().proposeIdentity('/work/api/.git'));
+  await act(async () => m.state().acceptIdentity('/work/api/.git'));
+  assert.equal(m.state().map.repositories.find(r => r.gitCommonDir === '/work/api/.git').originSha256, H('e'));
+  assert.equal(m.state().map.repositories.find(r => r.gitCommonDir === '/work/api/.git').client, 'ClienteA', 'the client is kept');
+  assert.equal(calls.filter(([n]) => n === 'setClients').length, 0, 'nothing is saved');
+  await act(async () => m.state().proposeIdentity('/work/rascunho/.git'));
+  assert.deepEqual(m.state().identityChange('/work/rascunho/.git'), { from: H('d'), to: null });
+  await act(async () => m.state().acceptIdentity('/work/rascunho/.git'));
+  assert.equal(m.state().map.repositories.find(r => r.gitCommonDir === '/work/rascunho/.git').originSha256, null);
+  assert.equal(m.state().map.version, 2, 'local-only needs version 2');
+  // rendering: the drifted row shows the separate action, in Portuguese, and no plain bind for it
+  await act(async () => m.state().proposeIdentity('/work/api/.git'));
+  const mod = m.mod; mod.primitiveState.tree = true;
+  let renderer;
+  await act(async () => { renderer = TestRenderer.create(React.createElement(mod.ClientsCard, { colors, compact: false, state: m.state(), poolSlot: null })); });
+  t.after(async () => { await act(async () => renderer.unmount()); });
+  const strings = []; const buttons = [];
+  const walk = node => { if (node == null) return; if (typeof node === 'string') { strings.push(node); return; } if (Array.isArray(node)) { node.forEach(walk); return; }
+    if (node.props?.accessibilityRole === 'button') buttons.push({ label: node.props.accessibilityLabel, disabled: node.props.accessibilityState?.disabled === true }); (node.children ?? []).forEach(walk); };
+  walk(renderer.toJSON());
+  const text = strings.join(' | ');
+  assert.match(text, /Deriva de identidade/); assert.match(text, /Vincular não corrige um repositório cuja identidade derivou/);
+  assert.match(text, /Identidade salva/); assert.match(text, /Nova identidade/);
+  assert.ok(buttons.some(b => b.label === 'Confirmar a nova identidade' && !b.disabled)); assert.ok(buttons.some(b => b.label === 'Aceitar a nova identidade'));
+  assert.equal(buttons.filter(b => b.label === 'Vincular ao cliente escolhido' && b.disabled).length >= 2, true, 'plain bind is disabled for drifted rows');
 });

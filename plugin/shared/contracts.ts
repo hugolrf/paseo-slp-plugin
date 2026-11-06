@@ -381,21 +381,43 @@ export const SetPeerPoolOutput = z.object({
 // by convention — the daemon cannot tell the Manager screen from another local
 // process (host CAPABILITY_GAP; see docs/operations.md).
 // ---------------------------------------------------------------------------
+// Structured rules (map version 2). The server's parseClientMap is the judge of
+// shape and bounds; these types only let the screen build a draft.
+export const ClientRulesDraft = z.object({
+  commitIdentity: z.object({ name: z.string().max(200), email: z.string().max(300) }).passthrough().nullable().optional(),
+  titleFormat: z.string().max(64).nullable().optional(),
+  aiFooter: z.string().max(16).nullable().optional(),
+  origin: z.object({ kind: z.string().max(16) }).passthrough().nullable().optional(),
+}).passthrough();
 export const ClientsMapDraft = z.object({
   version: z.number(),
+  /** Version 2 only. `true`: a project without a client entry blocks seat formation and agent.create. */
+  strict: z.boolean().optional(),
   protectedRoots: z.array(z.string().max(4096)).max(256),
-  clients: z.record(z.string().max(256), z.object({ directory: z.string().max(256) }).passthrough()),
+  rules: ClientRulesDraft.optional(),
+  clients: z.record(z.string().max(256), z.object({ directory: z.string().max(256), rules: ClientRulesDraft.optional() }).passthrough()),
   repositories: z.array(z.object({
     client: z.string().max(256), project: z.string().max(512),
-    gitCommonDir: z.string().max(4096), originSha256: z.string().max(128),
+    /** `null` (version 2): a local-only repository, which must have zero remotes. */
+    gitCommonDir: z.string().max(4096), originSha256: z.string().max(128).nullable(),
   }).passthrough()).max(4096),
 }).passthrough();
+const GitIdentity = z.object({ name: z.string().nullable(), email: z.string().nullable() }).strict();
+/** Read-only comparison of a checkout's Git identity with the rule of its own client. */
+export const IdentityCheck = z.object({
+  state: z.enum(["ok", "differs", "unconfigured", "unknown"]),
+  expected: z.object({ name: z.string(), email: z.string() }).strict(),
+  effective: GitIdentity, local: GitIdentity,
+}).strict();
 const ClientRef = z.string().min(1).max(256);
 export const GetClientsInput = z.object({ schemaVersion: z.literal(1), target: Target }).strict();
 export const ClientRow = z.object({
   name: z.string(), directory: z.string(), referenced: z.boolean(), repositories: z.number().int(),
   routingSha256: Sha.nullable(), protocolSha256: Sha.nullable(), options: z.number().int().nullable(),
   error: z.string().nullable(),
+  /** The rendered block this client's agents receive (global ← client rules); null when no rule applies. */
+  rulesText: z.string().nullable(),
+  rulesSha256: Sha.nullable(),
   /** true when the file's current hash differs from the last hash this screen wrote (audit log). */
   externalChange: z.boolean(),
 }).strict();
@@ -405,6 +427,8 @@ export const GetClientsOutput = z.object({
   mapState: z.enum(["absent", "valid", "invalid"]),
   mapSha256: Sha.nullable(),
   map: ClientsMapDraft.nullable(),
+  /** From the saved map; `false` for version 1 and for no map. */
+  strict: z.boolean(),
   mapError: z.string().nullable(),
   hostErrors: z.array(z.string()),
   mapExternalChange: z.boolean(),
@@ -441,7 +465,8 @@ export const ValidateClientsDraftOutput = z.object({
 export const IdentifyRepositoryInput = z.object({ schemaVersion: z.literal(1), target: Target, path: AbsolutePath }).strict();
 export const IdentifyRepositoryOutput = z.object({
   schemaVersion: z.literal(1),
-  gitCommonDir: z.string(), originSha256: Sha, projectSuggestion: z.string(),
+  /** `originSha256: null` + `localOnly: true`: the checkout has no remote (version 2 map only). */
+  gitCommonDir: z.string(), originSha256: Sha.nullable(), localOnly: z.boolean(), projectSuggestion: z.string(),
   linked: z.boolean(), mappedClient: z.string().nullable(),
 }).strict();
 export const ExplainResolutionInput = z.object({ schemaVersion: z.literal(1), target: Target, path: AbsolutePath }).strict();
@@ -457,6 +482,37 @@ export const ExplainResolutionOutput = z.object({
   client: z.string().nullable(),
   code: z.string().nullable(),
   reason: z.string(),
+  /** Map facts about the checkout's binding; null when the map does not bind it. */
+  strict: z.boolean().nullable(),
+  localOnly: z.boolean().nullable(),
+  rulesSha256: Sha.nullable(),
+  identity: IdentityCheck.nullable(),
+}).strict();
+// Every project the Paseo host knows, with its client binding (list + batch bind
+// on the screen). The host list is data from the screen; identity, binding and
+// "pending" are always computed by the server from the paths. Worktrees of one
+// repository collapse into one row (keyed by Git common-dir).
+export const ClientProjectWorkspace = z.object({ id: z.string().max(256), name: z.string().max(512), path: AbsolutePath }).strict();
+export const ListClientProjectsInput = z.object({
+  schemaVersion: z.literal(1), target: Target, workspaces: z.array(ClientProjectWorkspace).max(1024),
+}).strict();
+export const ClientProjectRow = z.object({
+  /** Git common-dir, or `path:<directory>` for a directory that is not a Git checkout. */
+  key: z.string(),
+  /** bound: an entry names a client; pending: no entry (blocked under a strict map); blocked: the map refuses it; not-git: no Git identity to map. */
+  state: z.enum(["bound", "pending", "blocked", "not-git"]),
+  name: z.string(), workspaceIds: z.array(z.string()), paths: z.array(z.string()),
+  gitCommonDir: z.string().nullable(), originSha256: Sha.nullable(), localOnly: z.boolean(),
+  projectSuggestion: z.string(), linked: z.boolean(),
+  client: z.string().nullable(), code: z.string().nullable(), reason: z.string().nullable(),
+  identity: IdentityCheck.nullable(),
+}).strict();
+export const ListClientProjectsOutput = z.object({
+  schemaVersion: z.literal(1),
+  mapState: z.enum(["absent", "valid", "invalid"]),
+  strict: z.boolean(),
+  pending: z.number().int(),
+  projects: z.array(ClientProjectRow),
 }).strict();
 export const SetClientsInput = z.object({
   schemaVersion: z.literal(1), target: Target, map: ClientsMapDraft,
@@ -694,6 +750,7 @@ export const getClientFiles = defineRpc({ name: "get-client-files", input: GetCl
 export const validateClientsDraft = defineRpc({ name: "validate-clients-draft", input: ValidateClientsDraftInput, output: ValidateClientsDraftOutput });
 export const identifyRepository = defineRpc({ name: "identify-repository", input: IdentifyRepositoryInput, output: IdentifyRepositoryOutput });
 export const explainResolution = defineRpc({ name: "explain-resolution", input: ExplainResolutionInput, output: ExplainResolutionOutput });
+export const listClientProjects = defineRpc({ name: "list-client-projects", input: ListClientProjectsInput, output: ListClientProjectsOutput });
 export const setClients = defineRpc({ name: "set-clients", input: SetClientsInput, output: SetClientsOutput });
 export const setClientPool = defineRpc({ name: "set-client-pool", input: SetClientPoolInput, output: SetClientPoolOutput });
 export const setClientProtocol = defineRpc({ name: "set-client-protocol", input: SetClientProtocolInput, output: SetClientProtocolOutput });
@@ -943,6 +1000,10 @@ export type ValidateClientsDraftRequest = z.infer<typeof ValidateClientsDraftInp
 export type ValidateClientsDraftResult = z.infer<typeof ValidateClientsDraftOutput>;
 export type IdentifyRepositoryResult = z.infer<typeof IdentifyRepositoryOutput>;
 export type ExplainResolutionResult = z.infer<typeof ExplainResolutionOutput>;
+export type IdentityCheckValue = z.infer<typeof IdentityCheck>;
+export type ClientRulesDraftValue = z.infer<typeof ClientRulesDraft>;
+export type ListClientProjectsResult = z.infer<typeof ListClientProjectsOutput>;
+export type ClientProjectRowValue = z.infer<typeof ClientProjectRow>;
 export type SetClientsRequest = z.infer<typeof SetClientsInput>;
 export type SetClientsResult = z.infer<typeof SetClientsOutput>;
 export type SetClientPoolRequest = z.infer<typeof SetClientPoolInput>;

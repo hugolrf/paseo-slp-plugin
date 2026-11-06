@@ -660,8 +660,26 @@ writing. It prints one deterministic JSON report (`ok`, `mapSha256`, sorted
 1 when the map is absent, invalid (including repeated keys), a `gitCommonDir` or
 protected root does not exist on this host or is not in canonical real-path form,
 two entries name one common-dir, or any client pool/protocol is missing,
-symlinked, oversized or fails Peer-pool validation. See
+symlinked, oversized or fails Peer-pool validation. A version 2 map adds
+`mapVersion`, `strict`, per-client `rulesSha256` and per-repository `localOnly`
+(a version 1 report is unchanged), and a local-only entry whose repository now
+has a remote is an error. See
 [the central client map](operations.md#central-client-map-pool-and-protocol-per-client-outside-repositories).
+
+## `clients check`
+
+`clients check <absolute-path> [--paseo-home <absolute-home>]` is read-only: it
+resolves the client binding of the checkout at `<path>` with the same lookup seats
+use and prints one JSON report (`path`, `ok`, `binding` — `absent`, `unmapped`,
+`mapped` with `client`, `project`, `mapVersion`, `strict`, `localOnly`, or
+`blocked` with `error {code, message}` — plus `rules` and `identity`).
+`identity` compares the *effective* Git identity (`git config --get user.name` /
+`user.email`) with the `commitIdentity` rule of the checkout's **own** client and
+lists the repository-local values: `state` is `ok`, `differs`, `unconfigured` or
+`unknown`; it is `null` when the client has no such rule. Exit 1 when the binding is
+blocked (for example `CLIENT_UNMAPPED` under a strict map) or the identity is not
+`ok`; otherwise 0. Nothing is ever written, including the repository's Git config.
+See [client binding](operations.md#client-binding-strict-mode-local-only-rules-pending-projects-git-identity).
 
 ## `desk-recover`
 

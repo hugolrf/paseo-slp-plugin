@@ -44,3 +44,16 @@ export function centralFixture(t, options = {}) {
   return { ...f, clientPool, userPool, clientDir,
     mapPath: join(f.home, 'slp-clients/clients.json'), remapped: (map) => writeMap(f.home, map) };
 }
+
+/** A version 2 map: strict flag, optional global rules, per-client rules, null origin = local-only. */
+export const baseMapV2 = (commonDir, extra = {}) => ({
+  version: 2, strict: false, protectedRoots: [],
+  clients: { ClienteA: { directory: 'clienteA' } },
+  repositories: [{ client: 'ClienteA', project: 'grupo/api', gitCommonDir: commonDir, originSha256: sha256(ORIGIN) }],
+  ...extra,
+});
+export const RULES = {
+  commitIdentity: { name: 'Nome Exemplo', email: 'exemplo@example.invalid' },
+  titleFormat: 'origin-id - pt-title',
+  aiFooter: 'forbid',
+};
