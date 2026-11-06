@@ -23,7 +23,7 @@ const pool = (id = 'client-a', notes = 'pool of ClienteA') => ({ version: 1, pol
   options: [{ id, provider: 'codex', roles: ['peer'], model: 'model/variant', enabled: true, availability: 'ready', suitableFor: ['coding'], avoidFor: [], notes }] });
 const PROTOCOL = '---\nagent_mode: full-access\n---\nProtocolo.\n';
 
-function fixture(t) {
+function fixture(t, deps = {}) {
   const home = realpathSync(makeHome(t));
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'slp-clients-ui-'))); t.after(() => rmSync(dir, { recursive: true, force: true }));
   const repo = join(dir, 'work/api'); const commonDir = committedRepository(repo);
@@ -31,7 +31,7 @@ function fixture(t) {
   const other = join(dir, 'work/other'); const otherCommon = committedRepository(other);
   fixtureGit(other, 'remote', 'add', 'origin', 'https://git.example.invalid/outro/app.git');
   let tick = 0;
-  const store = createClientsStore({ now: () => new Date(Date.UTC(2026, 10, 6, 12, 0, tick++)) });
+  const store = createClientsStore({ now: () => new Date(Date.UTC(2026, 10, 6, 12, 0, tick++)), ...deps });
   const target = targetOf(home);
   const call = (name, extra) => store[name]({ schemaVersion: 1, target, ...extra });
   const clientsDir = join(home, 'slp-clients');
@@ -448,17 +448,18 @@ test('P1/P3: the project list collapses worktrees into one row, marks pending / 
   const before = treeHash(f.home);
   const none = await f.call('listClientProjects', { workspaces });
   assert.equal(none.mapState, 'absent'); assert.equal(none.strict, false);
-  const byName = rows => Object.fromEntries(rows.projects.map(row => [row.name, row]));
+  const byPath = (rows, path) => rows.projects.find(row => row.paths.includes(path));
   assert.equal(none.projects.length, 4, 'api + its worktree are one row');
   const api = none.projects.find(row => row.gitCommonDir === f.commonDir);
   assert.deepEqual(api.workspaceIds.sort(), ['w-api', 'w-wt']); assert.equal(api.paths.length, 2); assert.equal(api.state, 'pending'); assert.equal(api.originSha256, sha(URL_WITH_TOKEN));
   assert.equal(JSON.stringify(none).includes('SECRET-TOKEN'), false, 'no credential ever leaves the server');
-  assert.equal(byName(none).plain.state, 'not-git'); assert.equal(byName(none).gone.state, 'blocked');
-  assert.equal(none.pending, 2);
+  assert.deepEqual([byPath(none, plain).state, byPath(none, plain).kind], ['pending', 'folder'], 'a folder without Git is a bindable container row'); assert.equal(byPath(none, join(f.dir, 'does-not-exist')).state, 'blocked');
+  assert.equal(none.projects.some(row => ['api', 'api (pr 12)', 'other', 'plain', 'gone'].includes(row.name) && row.name !== row.repoName), false, 'a workspace name is never a row name');
+  assert.equal(none.pending, 3);
   assert.equal(treeHash(f.home), before, 'listing writes nothing');
   await f.save(f.map(f.entry('ClienteA', 'grupo/api', f.commonDir, URL_WITH_TOKEN)));
   const saved = await f.call('listClientProjects', { workspaces });
-  assert.equal(saved.mapState, 'valid'); assert.equal(saved.pending, 1);
+  assert.equal(saved.mapState, 'valid'); assert.equal(saved.pending, 2);
   const boundApi = saved.projects.find(row => row.gitCommonDir === f.commonDir);
   assert.equal(boundApi.state, 'bound'); assert.equal(boundApi.client, 'ClienteA'); assert.equal(boundApi.projectSuggestion, 'grupo/api');
   assert.equal(saved.projects.find(row => row.gitCommonDir === f.otherCommon).state, 'pending');
@@ -571,4 +572,153 @@ test('F1: changing the origin identity of an EXISTING entry is never silent: one
   const added = await review([...base.repositories, { client: 'ClienteB', project: 'novo', gitCommonDir: f.otherCommon, originSha256: sha('https://git.example.invalid/outro/app.git') }]);
   assert.deepEqual(added, [], 'a brand-new entry is not an identity change');
   assert.equal(f.audit().some(line => /origin identity changed/.test(JSON.stringify(line))), false);
+});
+
+// ---------------------------------------------------------------------------
+// Fase 3b: the row is the Paseo PROJECT, never the workspace
+// ---------------------------------------------------------------------------
+const ws = (id, name, path, project = {}) => ({ id, name, path, ...project });
+const P_API = { projectId: 'p-api', projectLabel: 'CemigSim / client-area-api', projectKind: 'git' };
+
+test('W2/(c): 3 worktrees + 1 local checkout of one repository are ONE row named by the Paseo project, with "4 workspaces" and the main checkout path — workspace names (task titles) are never the row name', async t => {
+  const f = fixture(t);
+  const trees = ['wt-1', 'wt-2', 'wt-3'].map(name => { const path = join(f.dir, `work/${name}`); fixtureGit(f.repo, 'worktree', 'add', '--detach', path, 'HEAD'); return path; });
+  const workspaces = [
+    ws('w0', 'main', f.repo, { ...P_API, workspaceKind: 'local_checkout' }),
+    ...trees.map((path, i) => ws(`w${i + 1}`, ['Corrige erro 500 ao editar contato', 'CEM-308 revisar', 'spike'][i], path, { ...P_API, workspaceKind: 'worktree' })),
+  ];
+  const list = await f.call('listClientProjects', { workspaces });
+  assert.equal(list.projects.length, 1, JSON.stringify(list.projects.map(r => r.name)));
+  const row = list.projects[0];
+  assert.equal(row.name, 'CemigSim / client-area-api'); assert.equal(row.projectId, 'p-api'); assert.equal(row.projectLabel, 'CemigSim / client-area-api');
+  assert.equal(row.workspaceCount, 4); assert.deepEqual(row.workspaceIds.sort(), ['w0', 'w1', 'w2', 'w3']);
+  assert.equal(row.mainPath, f.repo); assert.equal(row.repoName, 'api'); assert.equal(row.gitCommonDir, f.commonDir);
+  for (const title of ['Corrige erro 500 ao editar contato', 'CEM-308 revisar', 'spike']) assert.equal(JSON.stringify(row).includes(`"name":"${title}"`), false);
+  // without any project info (an older caller) the title is still never the row name
+  const bare = await f.call('listClientProjects', { workspaces: [ws('w9', 'Corrige erro 500', f.repo)] });
+  assert.equal(bare.projects[0].name, 'api'); assert.equal(bare.projects[0].projectId, null); assert.equal(bare.projects[0].workspaceCount, 1);
+});
+
+test('W3: a project that is not a Git repository is ONE row per project root folder (a bindable container), with its workspaces counted', async t => {
+  const f = fixture(t);
+  const root = join(f.dir, 'Financeiro'); mkdirSync(join(root, 'sub'), { recursive: true });
+  const kind = { projectKind: 'non_git', projectRootPath: root, projectId: 'p-fin', projectLabel: 'Financeiro' };
+  const list = await f.call('listClientProjects', { workspaces: [ws('a', 'Conciliar mês', root, kind), ws('b', 'Relatório', join(root, 'sub'), kind)] });
+  assert.equal(list.projects.length, 1);
+  const row = list.projects[0];
+  assert.deepEqual([row.kind, row.state, row.name, row.workspaceCount, row.key, row.mainPath, row.gitCommonDir, row.containerBlocked], ['folder', 'pending', 'Financeiro', 2, `path:${root}`, root, null, null]);
+  assert.equal(list.pending, 1);
+});
+
+test('W4: a Paseo project with several repositories yields one row per repository under the same projectId', async t => {
+  const f = fixture(t);
+  const project = { projectId: 'p-multi', projectLabel: 'DWLaw / Portal', projectKind: 'git' };
+  const list = await f.call('listClientProjects', { workspaces: [ws('a', 'api', f.repo, project), ws('b', 'other', join(f.dir, 'work/other'), project)] });
+  assert.equal(list.projects.length, 2);
+  assert.deepEqual(list.projects.map(r => r.projectId), ['p-multi', 'p-multi']); assert.deepEqual(list.projects.map(r => r.name), ['DWLaw / Portal', 'DWLaw / Portal']);
+  assert.deepEqual(list.projects.map(r => r.repoName).sort(), ['api', 'other']);
+});
+
+test('(a): two Paseo projects for the SAME repository are one row (one binding) that lists both projects, so the screen can warn about the duplicate', async t => {
+  const f = fixture(t);
+  const list = await f.call('listClientProjects', { workspaces: [
+    ws('a', 'x', f.repo, { projectId: 'p1', projectLabel: 'Pessoal / paseo-plugins' }), ws('b', 'y', f.repo, { projectId: 'p2', projectLabel: 'Pessoal / Paseo Plugins' }) ] });
+  assert.equal(list.projects.length, 1); assert.equal(list.pending, 1);
+  assert.deepEqual(list.projects[0].projects, [{ id: 'p1', label: 'Pessoal / paseo-plugins' }, { id: 'p2', label: 'Pessoal / Paseo Plugins' }].sort((x, y) => x.label.localeCompare(y.label)));
+  assert.equal(list.projects[0].workspaceCount, 2);
+});
+
+test('W1/invariant: the new workspace fields are declared in a strict schema, optional, display-only — projectId never reaches the map or a pin', async t => {
+  const f = fixture(t);
+  await conflict(f.call('listClientProjects', { workspaces: [{ id: 'a', name: 'n', path: f.repo, surprise: 1 }] }), 'INVALID_REQUEST');
+  await conflict(f.call('listClientProjects', { workspaces: [{ id: 'a', name: 'n', path: f.repo, projectKind: 'weird' }] }), 'INVALID_REQUEST');
+  await conflict(f.call('listClientProjects', { workspaces: [{ id: 'a', name: 'n', path: f.repo, projectRootPath: 'relative' }] }), 'INVALID_REQUEST');
+  assert.equal((await f.call('listClientProjects', { workspaces: [{ id: 'a', name: 'n', path: f.repo }] })).projects.length, 1, 'a caller without the fields still works');
+  const row = (await f.call('listClientProjects', { workspaces: [ws('a', 'n', f.repo, P_API)] })).projects[0];
+  await f.save(f.map({ client: 'ClienteA', project: row.projectSuggestion, gitCommonDir: row.gitCommonDir, originSha256: row.originSha256 }));
+  const saved = readFileSync(f.mapPath, 'utf8');
+  assert.equal(/p-api|projectId|client-area-api/.test(saved), false, 'the saved map names no Paseo project');
+  const contracts = readFileSync(join(root, 'plugin/shared/contracts.ts'), 'utf8');
+  assert.equal(/binding[^\n]*projectId/.test(readFileSync(join(root, 'plugin/server/desk-placement.ts'), 'utf8')), false);
+  assert.match(contracts, /export const ClientProjectWorkspace = z\.object\(\{[\s\S]*?\}\)\.strict\(\)/);
+});
+
+// ---------------------------------------------------------------------------
+// Fase 3b: containers (project root folders without Git) on the screen's server
+// ---------------------------------------------------------------------------
+const CAPS = { runtimeCapabilities: async () => ({ clientContainers: 1 }) };
+const mapWith = (f, containers, extra = {}) => ({ ...v2(f, [f.entry('ClienteA', 'grupo/api', f.commonDir, URL_WITH_TOKEN)], extra), containers });
+
+test('containers (condition 1): the server saves containers ONLY when the bound runtime declares clientContainers, whatever the screen sent; the reason is shown and nothing is written otherwise', async t => {
+  const geral = null; void geral;
+  for (const [label, deps, allowed] of [['declared', CAPS, true], ['declares nothing', { runtimeCapabilities: async () => ({}) }, false], ['unverifiable', { runtimeCapabilities: async () => null }, false], ['no probe', {}, false]]) {
+    const f = fixture(t, deps);
+    const folder = join(f.dir, 'DWLaw', 'Geral'); mkdirSync(folder, { recursive: true });
+    const draft = mapWith(f, [{ client: 'ClienteA', project: 'DWLaw / Geral', path: folder }]);
+    const view = await f.call('getClients', {});
+    assert.equal(view.containerWrites.allowed, allowed, label);
+    const preview = await f.call('validateClientsDraft', { draft: { kind: 'map', map: draft } });
+    assert.equal(preview.ok, allowed, `${label}: ${JSON.stringify(preview.errors)}`);
+    if (allowed) {
+      const saved = await f.save(draft);
+      assert.deepEqual(saved.map.containers, [{ client: 'ClienteA', project: 'DWLaw / Geral', path: folder }]);
+      assert.equal(f.audit().some(line => JSON.stringify(line).includes('Geral')), false, 'the audit never carries a path or project');
+    } else {
+      assert.match(preview.errors.join('\n'), /containers are not saved/); assert.equal(preview.confirm, null);
+      await assert.rejects(f.call('setClients', { map: draft, expectedSha256: null, confirm: 'a'.repeat(64) }), error => error.code === 'INVALID_REQUEST');
+      assert.equal(existsSync(f.mapPath), false, `${label}: nothing written`);
+    }
+  }
+});
+
+test('containers: an unchanged saved list never re-blocks other edits, removing containers is always allowed, HOME is refused even with the capability, and the review warns about a container above others', async t => {
+  const f = fixture(t, CAPS);
+  const fakeHome = join(f.dir, 'home', 'user'); mkdirSync(fakeHome, { recursive: true });
+  const previous = process.env.HOME; process.env.HOME = fakeHome; t.after(() => { if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous; });
+  const outer = join(fakeHome, 'DWLaw'); const inner = join(outer, 'Geral'); mkdirSync(inner, { recursive: true });
+  const bad = await f.call('validateClientsDraft', { draft: { kind: 'map', map: mapWith(f, [{ client: 'ClienteA', project: 'casa', path: fakeHome }]) } });
+  assert.equal(bad.ok, false); assert.match(bad.errors.join('\n'), /user home|can never be bound/);
+  const draft = mapWith(f, [{ client: 'ClienteA', project: 'DWLaw', path: outer }, { client: 'ClienteB', project: 'Geral', path: inner }]);
+  const preview = await f.call('validateClientsDraft', { draft: { kind: 'map', map: draft } });
+  assert.equal(preview.ok, true, JSON.stringify(preview.errors));
+  assert.ok(preview.warnings.some(w => /contains the containers/.test(w) && w.includes(outer)), JSON.stringify(preview.warnings));
+  assert.deepEqual(preview.affectedClients, ['ClienteA', 'ClienteB']);
+  await f.save(draft);
+  const readOnlyRuntime = fixture(t, { runtimeCapabilities: async () => ({}) });
+  void readOnlyRuntime;
+  // same store, capability withdrawn: copy the map into a store that cannot save containers
+  const g = fixture(t, { runtimeCapabilities: async () => ({}) });
+  mkdirSync(join(g.home, 'slp-clients'), { recursive: true }); writeFileSync(join(g.home, 'slp-clients/clients.json'), readFileSync(f.mapPath));
+  const current = await g.call('getClients', {});
+  const touch = { ...current.map, protectedRoots: [] , rules: { aiFooter: 'allow' } };
+  assert.equal((await g.call('validateClientsDraft', { draft: { kind: 'map', map: touch } })).ok, true, 'containers unchanged: other edits are not blocked');
+  const removed = { ...current.map }; delete removed.containers;
+  assert.equal((await g.call('validateClientsDraft', { draft: { kind: 'map', map: removed } })).ok, true, 'removing containers is always allowed');
+  const changed = { ...current.map, containers: current.map.containers.slice(1) };
+  assert.equal((await g.call('validateClientsDraft', { draft: { kind: 'map', map: changed } })).ok, false, 'changing the list needs the capability');
+});
+
+test('containers: the project list offers a Paseo project folder as ONE bindable row (DWLaw / Geral), binds it through the container, and never offers the HOME', async t => {
+  const f = fixture(t, CAPS);
+  const fakeHome = join(f.dir, 'home', 'user'); mkdirSync(fakeHome, { recursive: true });
+  const previous = process.env.HOME; process.env.HOME = fakeHome; t.after(() => { if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous; });
+  const geral = join(fakeHome, 'Projetos', 'DWLaw', 'Geral'); mkdirSync(join(geral, 'docs'), { recursive: true });
+  const kind = { projectKind: 'non_git', projectId: 'p-geral', projectLabel: 'DWLaw / Geral', projectRootPath: geral };
+  const casa = { projectKind: 'non_git', projectId: 'p-casa', projectLabel: 'Pessoal / Casa', projectRootPath: fakeHome };
+  const workspaces = [ws('a', 'Revisar contrato', geral, kind), ws('b', 'Planilha', join(geral, 'docs'), kind), ws('c', 'Geral da casa', fakeHome, casa)];
+  const before = await f.call('listClientProjects', { workspaces });
+  const row = before.projects.find(r => r.projectId === 'p-geral');
+  assert.deepEqual([row.kind, row.state, row.name, row.workspaceCount, row.mainPath, row.containerBlocked], ['folder', 'pending', 'DWLaw / Geral', 2, geral, null]);
+  const house = before.projects.find(r => r.projectId === 'p-casa');
+  assert.deepEqual([house.kind, house.state], ['folder', 'not-git']); assert.match(house.containerBlocked, /user home/);
+  assert.equal(before.pending, 1, 'only the bindable folder is pending');
+  await f.save(mapWith(f, [{ client: 'ClienteA', project: 'DWLaw / Geral', path: geral }]));
+  const after = await f.call('listClientProjects', { workspaces });
+  const bound = after.projects.find(r => r.projectId === 'p-geral');
+  assert.deepEqual([bound.state, bound.client], ['bound', 'ClienteA']);
+  assert.equal(after.pending, 0);
+  // and the lookup resolves the workspace below it
+  await f.savePool('ClienteA', pool()); await f.saveProtocol('ClienteA', PROTOCOL);
+  const explained = await f.call('explainResolution', { path: join(geral, 'docs') });
+  assert.deepEqual([explained.decidedBy, explained.client, explained.catalogScope], ['central', 'ClienteA', 'central:ClienteA'], JSON.stringify(explained));
 });

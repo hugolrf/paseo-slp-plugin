@@ -51,6 +51,7 @@ import {
   CLIENT_FILE_MAX_BYTES,
   ClientMapError,
   checkMapHost,
+  containerWarnings,
   effectiveRules,
   entryForCommonDir,
   identifyCheckout,
@@ -73,6 +74,8 @@ const POOL = "slp-routing.json";
 const PROTOCOL = "workspace-protocol.md";
 
 export interface ClientsStoreDeps {
+  /** Capabilities the BOUND runtime declares (its `FORMATION_CAPABILITIES`), or null when unknown/unverifiable. */
+  runtimeCapabilities?: () => Promise<Record<string, number> | null>;
   guardPresetWrite?: typeof guardPresetWrite;
   uuid?: () => string;
   now?: () => Date;
@@ -95,6 +98,16 @@ export function createClientsStore(deps: ClientsStoreDeps = {}) {
   const now = deps.now ?? (() => new Date());
   const homeOf = (target: { hostId: string; daemonHome: string }) =>
     resolveDaemonHome(target, "config.json must be a regular file, not a link").canonicalHome;
+
+  // Containers (project root folders without Git) are written only when the bound runtime can read them back.
+  const containerWrites = async (): Promise<{ allowed: boolean; reason: string | null }> => {
+    let capabilities: Record<string, number> | null = null;
+    try { capabilities = (await deps.runtimeCapabilities?.()) ?? null; } catch { capabilities = null; }
+    if (capabilities?.clientContainers === 1) return { allowed: true, reason: null };
+    return { allowed: false, reason: capabilities === null
+      ? "containers are not saved: the capabilities of the bound runtime cannot be verified (no active, verified binding)"
+      : "containers are not saved: the bound runtime does not declare clientContainers; update the runtime first" };
+  };
 
   // ---- audit ------------------------------------------------------------
   type AuditLine = { at: string; actor: string; hostId: string; action: string; file: string; before: string | null; after: string | null };
@@ -221,7 +234,7 @@ export function createClientsStore(deps: ClientsStoreDeps = {}) {
         externalChange: changed(POOL, pool.sha256) || changed(PROTOCOL, protocol.sha256) };
     });
     return { schemaVersion: 1, canonicalHome: home, mapState: raw === null ? "absent" : map === null ? "invalid" : "valid",
-      mapSha256: raw?.sha256 ?? null, map: map === null ? null : (JSON.parse(serializeClientMap(map)) as NonNullable<GetClientsResult["map"]>), strict: map?.strict ?? false, mapError: error, hostErrors: map === null ? [] : checkMapHost(map),
+      mapSha256: raw?.sha256 ?? null, map: map === null ? null : (JSON.parse(serializeClientMap(map)) as NonNullable<GetClientsResult["map"]>), strict: map?.strict ?? false, containerWrites: await containerWrites(), mapError: error, hostErrors: map === null ? [] : checkMapHost(map),
       mapExternalChange: mapExternal, clients: rows };
   }
 
@@ -246,7 +259,7 @@ export function createClientsStore(deps: ClientsStoreDeps = {}) {
   // The validation of a draft, used by the preview RPC and re-run by every
   // write. `bytes` is exactly what a save would write.
   type Evaluated = { errors: string[]; warnings: string[]; bytes: string | null; affectedClients: string[]; mapHashChanges: boolean };
-  const evaluate = (home: string, draft: ValidateClientsDraftRequest["draft"]): Evaluated => {
+  const evaluate = (home: string, draft: ValidateClientsDraftRequest["draft"], containers: { allowed: boolean; reason: string | null } = { allowed: false, reason: null }): Evaluated => {
     if (draft.kind === "map") {
       let map: ClientMap;
       try { map = parseClientMap(JSON.stringify(draft.map)); }
@@ -254,6 +267,11 @@ export function createClientsStore(deps: ClientsStoreDeps = {}) {
       const errors = checkMapHost(map);
       const warnings: string[] = [];
       const current = readMap(home);
+      if ((map.containers?.length ?? 0) > 0) {
+        // Saving containers needs a runtime that reads them back (the server decides, whatever the screen sent).
+        if (JSON.stringify(map.containers) !== JSON.stringify(current.map?.containers ?? []) && !containers.allowed) errors.push(containers.reason ?? "containers are not saved: the bound runtime does not declare clientContainers");
+        warnings.push(...containerWarnings(map));
+      }
       for (const [name, { directory }] of Object.entries(map.clients).sort(([a], [b]) => a.localeCompare(b))) {
         const present = [POOL, PROTOCOL].filter(file => peek(home, directory, file).sha256 !== null);
         const missing = [POOL, PROTOCOL].filter(file => !present.includes(file));
@@ -283,7 +301,8 @@ export function createClientsStore(deps: ClientsStoreDeps = {}) {
         for (const name of new Set([...Object.keys(current.map.clients), ...Object.keys(map.clients)])) {
           // The client entry (incl. its own rules), its repositories and the rules it EFFECTIVELY gets (a global change reaches it too).
           const mine = (m: ClientMap) => JSON.stringify([m.clients[name] ?? null, m.version === 2 && m.clients[name] ? renderClientRules(name, effectiveRules(m, name)) : null,
-            m.repositories.filter(e => e.client === name).map(e => [e.project, e.gitCommonDir, e.originSha256]).sort()]);
+            m.repositories.filter(e => e.client === name).map(e => [e.project, e.gitCommonDir, e.originSha256]).sort(),
+            (m.containers ?? []).filter(c => c.client === name).map(c => [c.project, c.path]).sort()]);
           if (mine(current.map) !== mine(map)) affected.add(name);
         }
         if (JSON.stringify(current.map.protectedRoots) !== JSON.stringify(map.protectedRoots)) for (const name of Object.keys(map.clients)) affected.add(name);
@@ -308,7 +327,7 @@ export function createClientsStore(deps: ClientsStoreDeps = {}) {
 
   async function validateClientsDraft(input: unknown): Promise<ValidateClientsDraftResult> {
     const request = parseInput(ValidateClientsDraftInput, "validate-clients-draft", input);
-    const result = evaluate(homeOf(request.target), request.draft);
+    const result = evaluate(homeOf(request.target), request.draft, await containerWrites());
     return { schemaVersion: 1, ok: result.errors.length === 0, errors: result.errors, warnings: result.warnings,
       confirm: result.bytes === null || result.errors.length > 0 ? null : sha256Hex(result.bytes), affectedClients: result.affectedClients, mapHashChanges: result.mapHashChanges };
   }
@@ -381,7 +400,7 @@ export function createClientsStore(deps: ClientsStoreDeps = {}) {
   async function setClients(input: unknown): Promise<SetClientsResult> {
     const request: SetClientsRequest = parseInput(SetClientsInput, "set-clients", input);
     const home = homeOf(request.target);
-    const result = evaluate(home, { kind: "map", map: request.map });
+    const result = evaluate(home, { kind: "map", map: request.map }, await containerWrites());
     requireConfirm(request.confirm, result.bytes, result.errors);
     const current = readMap(home);
     casGate("clients.json", request.expectedSha256, current.raw?.sha256 ?? null);

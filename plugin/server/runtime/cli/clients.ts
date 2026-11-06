@@ -20,7 +20,7 @@ export const CLIENT_FILES = ['slp-routing.json', 'workspace-protocol.md'] as con
 export type ClientFileName = typeof CLIENT_FILES[number];
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
-const MAX_ROOTS = 64, MAX_CLIENTS = 256, MAX_REPOSITORIES = 1024, MAX_PROJECT = 200;
+const MAX_ROOTS = 64, MAX_CLIENTS = 256, MAX_REPOSITORIES = 1024, MAX_PROJECT = 200, MAX_CONTAINERS = 256;
 
 // Structured per-client rules (map version 2). Closed vocabulary on purpose: an
 // enum or a bounded identity, never a free template, so the block delivered to
@@ -51,6 +51,10 @@ export class ClientMapError extends Error {
 }
 const fail = (code: ClientMapErrorCode, message: string): never => { throw new ClientMapError(code, message); };
 
+/** A project root folder that is NOT a Git repository (version 2 only). It binds the non-Git directories at or under it
+ * to a client, anchored by path (file identity) only. It never covers a Git repository: those resolve by their own
+ * identity (`repositories`). The deepest container wins. */
+export interface ClientMapContainer { client: string; project: string; path: string }
 /** `originSha256: null` (version 2 only) declares a local-only repository: it must have ZERO remotes. */
 export interface ClientMapRepository { client: string; project: string; gitCommonDir: string; originSha256: string | null }
 export interface ClientMap {
@@ -62,6 +66,8 @@ export interface ClientMap {
   rules?: ClientRules;
   clients: Record<string, { directory: string; rules?: ClientRules }>;
   repositories: ClientMapRepository[];
+  /** Version 2 only, optional (absent = none). Needs a runtime that declares `clientContainers`. */
+  containers?: ClientMapContainer[];
 }
 export interface LoadedClientMap { map: ClientMap; sha256: string; path: string; home: string }
 export interface ClientFile { text: string; sha256: string }
@@ -76,12 +82,14 @@ export interface CentralSource {
 export type ClientLookup =
   | { state: 'absent' }
   | { state: 'unmapped' }
-  | { state: 'mapped'; client: string; loaded: LoadedClientMap; location: string; gitCommonDir: string; entry: ClientMapRepository };
+  | { state: 'mapped'; client: string; loaded: LoadedClientMap; location: string; gitCommonDir: string | null; entry: ClientMapRepository | null; container: ClientMapContainer | null };
 /** What the formation pin carries of a client binding (map version 2 only). */
 export interface FormationBinding { client: string; mapSha256: string; rulesSha256: string | null }
 /** The binding of one checkout: which client owns it and what rules apply. */
 export interface BindingInfo {
   client: string; project: string; strict: boolean; version: 1 | 2; mapSha256: string; localOnly: boolean;
+  /** Bound by a project root folder (no Git) instead of a repository entry. */
+  container: boolean;
   rules: ClientRules;
   /** Rendered pt-BR block delivered to agents; null when no rule is in effect. */
   rulesText: string | null;
@@ -249,7 +257,7 @@ export function parseClientMap(text: string): ClientMap {
   const version = parsed.version;
   if (version !== 1 && version !== 2) fail('CLIENT_MAP_INVALID', 'client map version must be 1 or 2');
   const v2 = version === 2;
-  if (v2) exactKeys(parsed, ['version', 'strict', 'protectedRoots', 'clients', 'repositories'], 'client map', ['rules']);
+  if (v2) exactKeys(parsed, ['version', 'strict', 'protectedRoots', 'clients', 'repositories'], 'client map', ['rules', 'containers']);
   else exactKeys(parsed, ['version', 'protectedRoots', 'clients', 'repositories'], 'client map');
   if (v2 && typeof parsed.strict !== 'boolean') fail('CLIENT_MAP_INVALID', 'client map strict must be true or false');
   if (!Array.isArray(parsed.protectedRoots) || parsed.protectedRoots.length > MAX_ROOTS) fail('CLIENT_MAP_INVALID', `protectedRoots must be an array of at most ${MAX_ROOTS} paths`);
@@ -283,7 +291,22 @@ export function parseClientMap(text: string): ClientMap {
     return { client: entry.client as string, project: entry.project as string, gitCommonDir, originSha256: origin as string | null };
   });
   if (!v2) return { version: 1, strict: false, protectedRoots, clients, repositories };
-  return { version: 2, strict: parsed.strict as boolean, protectedRoots, ...(Object.hasOwn(parsed, 'rules') ? { rules: parseRules(parsed.rules, 'global rules', true) } : {}), clients, repositories };
+  let containers: ClientMapContainer[] | undefined;
+  if (Object.hasOwn(parsed, 'containers')) {
+    if (!Array.isArray(parsed.containers) || parsed.containers.length > MAX_CONTAINERS) fail('CLIENT_MAP_INVALID', `containers must be an array of at most ${MAX_CONTAINERS} entries`);
+    const paths = new Set<string>();
+    containers = (parsed.containers as unknown[]).map((entry, i) => {
+      if (!isRecord(entry)) return fail('CLIENT_MAP_INVALID', `containers[${i}] must be an object`);
+      exactKeys(entry, ['client', 'project', 'path'], `containers[${i}]`);
+      if (typeof entry.client !== 'string' || !Object.hasOwn(clients, entry.client)) fail('CLIENT_MAP_INVALID', `containers[${i}]: client is not declared in clients`);
+      if (typeof entry.project !== 'string' || !entry.project.trim() || entry.project.length > MAX_PROJECT || /[\u0000-\u001f]/.test(entry.project)) fail('CLIENT_MAP_INVALID', `containers[${i}]: project must be a short text`);
+      const path = cleanAbsolute(entry.path, `containers[${i}].path`);
+      if (paths.has(path)) fail('CLIENT_MAP_INVALID', `path appears in more than one container entry (${path})`);
+      paths.add(path);
+      return { client: entry.client as string, project: entry.project as string, path };
+    });
+  }
+  return { version: 2, strict: parsed.strict as boolean, protectedRoots, ...(Object.hasOwn(parsed, 'rules') ? { rules: parseRules(parsed.rules, 'global rules', true) } : {}), clients, repositories, ...(containers !== undefined ? { containers } : {}) };
 }
 
 /** Absent map → null (historical behavior). Present but unreadable, symlinked,
@@ -311,7 +334,7 @@ export function readClientMapRaw(home: string): { text: string; sha256: string }
 export const serializeClientMap = (map: ClientMap): string => {
   const body = map.version === 1
     ? { version: map.version, protectedRoots: map.protectedRoots, clients: map.clients, repositories: map.repositories }
-    : { version: map.version, strict: map.strict, protectedRoots: map.protectedRoots, ...(map.rules !== undefined ? { rules: map.rules } : {}), clients: map.clients, repositories: map.repositories };
+    : { version: map.version, strict: map.strict, protectedRoots: map.protectedRoots, ...(map.rules !== undefined ? { rules: map.rules } : {}), clients: map.clients, repositories: map.repositories, ...(map.containers !== undefined ? { containers: map.containers } : {}) };
   return `${JSON.stringify(body, null, 2)}\n`;
 };
 export const sha256OfText = (text: string) => sha256Hex(text);
@@ -355,6 +378,69 @@ function underProtectedRoot(roots: string[], ...paths: string[]) {
   return false;
 }
 
+// ---- containers: project root folders without Git -------------------------
+const SYSTEM_ROOTS = ['/', '/Users', '/home', '/Volumes', '/tmp', '/private', '/etc', '/usr', '/var', '/bin', '/sbin', '/opt', '/System', '/Library', '/Applications', '/root', '/mnt', '/media', '/srv'];
+const ancestorsOf = (start: string): string[] => { const out: string[] = []; for (let current = start; ; current = dirname(current)) { out.push(current); if (dirname(current) === current) break; } return out; };
+/** A directory that is the root of another file system (st_dev differs from its parent's): a whole disk or share
+ * (macOS `/Volumes/<disk>`, WSL `/mnt/<drive>`), never one project. `stat` is injectable for the unit test. */
+export function isMountPoint(path: string, stat: (p: string) => { dev: number | bigint } = p => statSync(p)): boolean {
+  try { return stat(path).dev !== stat(dirname(path)).dev; } catch { return false; }
+}
+/** Why a container may never be bound, or null. Blocking everywhere (draft review, `clients validate`, and the lookup
+ * itself): the user's home, `/`, a system root, any folder that contains the home, or any ancestor of a protected
+ * root would cover far more than one project. Compared by file identity. */
+export function containerViolation(path: string, map: Pick<ClientMap, 'protectedRoots'>): string | null {
+  const key = inodeKey(path);
+  if (key === null) return null; // a missing path is reported by the host check
+  const forbidden = new Set<string>();
+  for (const root of SYSTEM_ROOTS) { const k = inodeKey(root); if (k !== null) forbidden.add(k); }
+  for (const ancestor of ancestorsOf(homedir())) { const k = inodeKey(ancestor); if (k !== null) forbidden.add(k); } // the home and everything above it
+  if (forbidden.has(key)) return `container ${path} is the user home, a system root or a folder that contains the home: it would cover everything, so it can never be bound`;
+  if (isMountPoint(path)) return `container ${path} is the root of a file system (a whole disk or share): it would cover far more than one project, so it can never be bound`;
+  for (const root of map.protectedRoots) {
+    if (ancestorsOf(root).some(ancestor => inodeKey(ancestor) === key)) return `container ${path} is, or contains, the protected folder ${root}: it would cover every project under it`;
+  }
+  return null;
+}
+/** The container (if any) that binds the non-Git directory `location`: the deepest ancestor-or-self that is a mapped
+ * container, by file identity. Two containers naming one directory, or a container the guards forbid, make the map
+ * invalid. Never consulted for a Git checkout: a container does not cover a repository. */
+export function findContainer(map: ClientMap, location: string): ClientMapContainer | null {
+  const containers = map.containers ?? [];
+  if (containers.length === 0) return null;
+  const byKey = new Map<string, ClientMapContainer>();
+  for (const container of containers) {
+    const violation = containerViolation(container.path, map);
+    if (violation !== null) return fail('CLIENT_MAP_INVALID', violation);
+    const key = inodeKey(container.path);
+    if (key === null) continue;
+    if (byKey.has(key)) return fail('CLIENT_MAP_INVALID', `more than one container entry names the same directory (${container.path})`);
+    byKey.set(key, container);
+  }
+  for (const ancestor of ancestorsOf(location)) {
+    const key = inodeKey(ancestor);
+    if (key === null || !byKey.has(key)) continue;
+    // Git said "not a repository", but a `.git` entry (file or directory) between the directory and the container root means a
+    // repository whose Git is broken (HEAD missing, a worktree whose main checkout moved, an unreadable .git): it is NOT a plain
+    // folder, so it must not silently take the container's client (or any user pool).
+    for (const step of ancestorsOf(location)) {
+      if (hasGitEntry(step)) return fail('CLIENT_UNMAPPED', `degraded Git repository inside a client folder (${join(step, '.git')} exists but Git does not recognize a repository): it does not inherit the folder's client; repair or remove it; no user-pool fallback`);
+      if (sameFile(step, ancestor)) break;
+    }
+    return byKey.get(key)!;
+  }
+  return null;
+}
+/** Does `.git` exist in `dir` (file or directory, readable or not)? Only a missing entry counts as absent. */
+function hasGitEntry(dir: string): boolean {
+  try { lstatSync(join(dir, '.git')); return true; }
+  catch (error) { return !['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? ''); }
+}
+/** True when a valid map carries at least one container (older runtimes cannot read it). */
+export function mapHasContainers(home: string): boolean {
+  try { return (loadClientMap(home)?.map.containers?.length ?? 0) > 0; } catch (error) { if (error instanceof ClientMapError) return false; throw error; }
+}
+
 // Git runs with a fixed C locale so "not a git repository" is recognizable.
 const gitRun = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], {
   encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 2500, maxBuffer: 4096,
@@ -387,6 +473,8 @@ type Probes = { origin: (cwd: string) => string; remotes: (cwd: string) => strin
 function lookupIn(loaded: LoadedClientMap, view: GitView, probes: Probes): ClientLookup {
   const strict = loaded.map.strict;
   if (view.state === 'not-git') {
+    const container = findContainer(loaded.map, view.location);
+    if (container !== null) return { state: 'mapped', client: container.client, loaded, location: view.location, gitCommonDir: null, entry: null, container };
     if (underProtectedRoot(loaded.map.protectedRoots, view.location)) fail('CLIENT_UNMAPPED', 'protected directory is not a Git checkout; no user-pool fallback');
     if (strict) fail('CLIENT_UNMAPPED', 'strict client map: the directory is not a Git checkout, so it cannot be bound to a client; no user-pool fallback');
     return { state: 'unmapped' };
@@ -412,7 +500,7 @@ function lookupIn(loaded: LoadedClientMap, view: GitView, probes: Probes): Clien
     try { actual = probes.origin(view.location); } catch { return fail('CLIENT_IDENTITY_DRIFT', 'remote identity drift: origin cannot be verified'); }
     if (actual !== entry.originSha256) fail('CLIENT_IDENTITY_DRIFT', 'remote identity drift: origin differs from the client map entry');
   }
-  return { state: 'mapped', client: entry.client, loaded, location: view.location, gitCommonDir: view.gitCommonDir, entry };
+  return { state: 'mapped', client: entry.client, loaded, location: view.location, gitCommonDir: view.gitCommonDir, entry, container: null };
 }
 
 type LookupRequest = { home: string; cwd: string; gitCommonDir?: string; origin?: (cwd: string) => string; remotes?: (cwd: string) => string[] };
@@ -458,20 +546,21 @@ export function renderClientRules(client: string, rules: ClientRules): string | 
   return [`\n## Regras do cliente ${client} (SLP)`, 'Vínculo verificado pelo Git; vale somente para este cliente e nunca substitui o protocolo do repositório nem autoriza ação externa.', ...lines].join('\n') + '\n';
 }
 /** Binding facts of a client in a loaded map (pure: no Git). */
-function bindingOfClient(loaded: LoadedClientMap, client: string, project: string, localOnly: boolean): BindingInfo {
+function bindingOfClient(loaded: LoadedClientMap, client: string, project: string, localOnly: boolean, container = false): BindingInfo {
   const { map, sha256 } = loaded;
   const rules = map.version === 2 ? effectiveRules(map, client) : {};
   const rulesText = renderClientRules(client, rules);
-  return { client, project, strict: map.strict, version: map.version, mapSha256: sha256, localOnly,
+  return { client, project, strict: map.strict, version: map.version, mapSha256: sha256, localOnly, container,
     rules, rulesText, rulesSha256: rulesText === null ? null : sha256Hex(rulesText) };
 }
 export const bindingInfo = (found: Extract<ClientLookup, { state: 'mapped' }>): BindingInfo =>
-  bindingOfClient(found.loaded, found.client, found.entry.project, found.entry.originSha256 === null);
+  found.container !== null ? bindingOfClient(found.loaded, found.client, found.container.project, false, true)
+    : bindingOfClient(found.loaded, found.client, found.entry!.project, found.entry!.originSha256 === null);
 /** What the formation pin records: version 2 maps only, so a version 1 map keeps every pin byte it has today. */
 export const formationBindingOf = (info: BindingInfo | null | undefined): FormationBinding | undefined =>
   info && info.version === 2 ? { client: info.client, mapSha256: info.mapSha256, rulesSha256: info.rulesSha256 } : undefined;
 
-export type Binding = { state: 'absent' } | { state: 'unmapped' } | { state: 'mapped'; info: BindingInfo; location: string; gitCommonDir: string };
+export type Binding = { state: 'absent' } | { state: 'unmapped' } | { state: 'mapped'; info: BindingInfo; location: string; gitCommonDir: string | null };
 /** Diagnostic binding of a checkout (the one rule `lookupIn` applies: strict ⇒
  * CLIENT_UNMAPPED). Throws ClientMapError like every consumer. */
 export function bindingFor(repository: string, home: string, probes: { origin?: (cwd: string) => string; remotes?: (cwd: string) => string[] } = {}): Binding {
@@ -659,7 +748,7 @@ export function traceSourceFor(repository: string, home: string): SourceTrace {
   const found = lookupIn(loaded, view!, { origin: originSha256Of, remotes: remotesOf });
   if (found.state !== 'mapped') return { resolution: null, decidedBy: 'none', mapPresent: true, linked, gitCommonDir, reason: 'the repository is not listed in the client map and lies outside the protected roots' };
   return { resolution: { kind: 'central', source: readClientSource(loaded, found.client) }, decidedBy: 'central', client: found.client, mapPresent: true, linked, gitCommonDir, binding: bindingInfo(found),
-    reason: `the repository is listed in the client map for ${found.client} (${found.entry.originSha256 === null ? 'local-only, no remote' : 'origin verified'})` };
+    reason: found.container !== null ? `the directory is inside the container ${found.container.path} of ${found.client}` : `the repository is listed in the client map for ${found.client} (${found.entry!.originSha256 === null ? 'local-only, no remote' : 'origin verified'})` };
 }
 const loadClientMapPresent = (home: string) => { try { return readClientMapRaw(home) !== null; } catch { return true; } };
 export const resolveSourceFor = (repository: string, home: string): SourceResolution => traceSourceFor(repository, home).resolution;
@@ -671,8 +760,14 @@ export const centralSourceFor = (repository: string, home: string): CentralSourc
 
 // ---- the project list the screen shows (read-only) -----------------------
 export type ProjectState = 'bound' | 'pending' | 'blocked' | 'not-git';
+export interface ProjectWorkspace { id: string; name: string; path: string; projectId?: string; projectLabel?: string; projectRootPath?: string; projectKind?: 'git' | 'directory' | 'non_git'; workspaceKind?: string }
 export interface ProjectRow {
-  key: string; state: ProjectState; name: string; workspaceIds: string[]; paths: string[];
+  key: string; state: ProjectState;
+  /** The Paseo project label when the host said it, else the repository/folder name — NEVER a workspace name (those are task titles). */
+  /** repository: bound by Git identity; folder: a project root without Git, bound as a container (path only). */
+  kind: 'repository' | 'folder'; containerBlocked: string | null;
+  name: string; projectId: string | null; projectLabel: string | null; projects: { id: string; label: string }[]; repoName: string; workspaceCount: number; mainPath: string | null;
+  workspaceIds: string[]; paths: string[];
   gitCommonDir: string | null; originSha256: string | null; localOnly: boolean; projectSuggestion: string; linked: boolean;
   client: string | null; code: string | null; reason: string | null; identity: IdentityCheck | null;
 }
@@ -682,38 +777,75 @@ const MAX_PATHS_PER_ROW = 20;
  * row), each with its binding computed here from the paths — never from what the
  * screen claims. Pending = a Git checkout with no map entry (a strict map blocks
  * it at formation and at agent.create; the project itself is never blocked). */
-export function inspectProjects(items: { id: string; name: string; path: string }[], home: string): ProjectInventory {
+export function inspectProjects(items: ProjectWorkspace[], home: string): ProjectInventory {
   let loaded: LoadedClientMap | null = null, mapError: string | null = null;
   try { loaded = loadClientMap(home); } catch (error) { if (!(error instanceof ClientMapError)) throw error; mapError = error.message; }
   const mapState = mapError !== null ? 'invalid' : loaded === null ? 'absent' : 'valid';
   const rows = new Map<string, ProjectRow>();
-  const add = (key: string, make: () => ProjectRow, item: { id: string; name: string; path: string }) => {
-    let row = rows.get(key);
-    if (row === undefined) { row = make(); rows.set(key, row); }
-    if (!row.workspaceIds.includes(item.id)) row.workspaceIds.push(item.id);
+  type Item = ProjectWorkspace;
+  const folderName = (path: string) => path.split('/').filter(Boolean).pop() ?? 'project';
+  const attach = (row: ProjectRow, item: Item) => {
+    if (!row.workspaceIds.includes(item.id)) { row.workspaceIds.push(item.id); row.workspaceCount = row.workspaceIds.length; }
     if (row.paths.length < MAX_PATHS_PER_ROW && !row.paths.includes(item.path)) row.paths.push(item.path);
+    if (item.projectId !== undefined && item.projectLabel && !row.projects.some(project => project.id === item.projectId)) {
+      row.projects.push({ id: item.projectId, label: item.projectLabel });
+      row.projects.sort((a, b) => a.label.localeCompare(b.label) || a.id.localeCompare(b.id));
+      row.projectId = row.projects[0]!.id; row.projectLabel = row.projects[0]!.label; row.name = row.projectLabel;
+    }
   };
-  const blank = (key: string, item: { name: string; path: string }): ProjectRow => ({ key, state: 'pending', name: item.name, workspaceIds: [], paths: [], gitCommonDir: null, originSha256: null,
-    localOnly: false, projectSuggestion: item.path.split('/').filter(Boolean).pop() ?? 'project', linked: false, client: null, code: null, reason: null, identity: null });
+  // The row is the PROJECT's repository (or its root folder): title = the Paseo project label; a workspace name is never used.
+  const blank = (key: string, item: Item, repoName: string, mainPath: string | null): ProjectRow => ({ key, state: 'pending', kind: 'repository', containerBlocked: null,
+    name: repoName, projectId: null, projectLabel: null, projects: [], repoName, workspaceCount: 0, mainPath,
+    workspaceIds: [], paths: [], gitCommonDir: null, originSha256: null, localOnly: false, projectSuggestion: repoName, linked: false,
+    client: null, code: null, reason: null, identity: null });
   for (const item of items) {
     let view: GitView;
     try { view = observeGit(item.path); }
     catch (error) {
       if (!(error instanceof ClientMapError)) throw error;
-      add(`path:${item.path}`, () => ({ ...blank(`path:${item.path}`, item), state: 'blocked', code: error.code, reason: error.message }), item); continue;
+      const key = `path:${item.path}`; // unobservable path: nothing can verify a claimed root, so the workspace path is the row
+      const row = rows.get(key) ?? { ...blank(key, item, folderName(item.path), item.path), state: 'blocked' as const, code: error.code, reason: error.message };
+      rows.set(key, row); attach(row, item); continue;
     }
-    if (view.state === 'not-git') { add(`path:${view.location}`, () => ({ ...blank(`path:${view.location}`, item), state: 'not-git', reason: 'not a Git checkout: it has no identity to map' }), item); continue; }
+    if (view.state === 'not-git') {
+      // A project root without Git: ONE row per root folder (its workspaces share it), bindable as a container (path
+      // only) unless the guards forbid it (the home, `/`, system roots, anything above a protected root).
+      // The caller's projectRootPath is display/grouping data: it is used only when it is an ancestor-or-equal (by file
+      // identity) of the workspace's REAL path; otherwise the real path is the row, so a container can never be claimed for a path it does not cover.
+      const root = item.projectRootPath !== undefined && ancestorsOf(view.location).some(ancestor => sameFile(ancestor, item.projectRootPath!)) ? item.projectRootPath : view.location;
+      const key = `path:${root}`;
+      let row = rows.get(key);
+      if (row === undefined) {
+        row = { ...blank(key, item, folderName(root), root), kind: 'folder' };
+        const violation = containerViolation(root, loaded?.map ?? { protectedRoots: [] });
+        if (mapError !== null) { row.state = 'blocked'; row.code = 'CLIENT_MAP_INVALID'; row.reason = mapError; }
+        else if (violation !== null) { row.state = 'not-git'; row.containerBlocked = violation; row.reason = violation; }
+        else if (loaded !== null) {
+          try {
+            const container = findContainer(loaded.map, root);
+            if (container !== null) { row.state = 'bound'; row.client = container.client; row.projectSuggestion = container.project; row.reason = sameFile(container.path, root) ? null : `covered by the container ${container.path}`; }
+            else if (underProtectedRoot(loaded.map.protectedRoots, root)) { row.code = 'CLIENT_UNMAPPED'; row.reason = 'inside a protected folder with no client: blocked'; }
+            else if (loaded.map.strict) { row.code = 'CLIENT_UNMAPPED'; row.reason = 'strict map: a project without a client is blocked'; }
+          } catch (error) {
+            if (!(error instanceof ClientMapError)) throw error;
+            row.state = 'blocked'; row.code = error.code; row.reason = error.message;
+          }
+        }
+        rows.set(key, row);
+      }
+      // Every workspace under the root must itself be an ordinary folder: a degraded Git repository among them blocks the row.
+      if (loaded !== null && mapError === null && row.state !== 'blocked') {
+        try { findContainer(loaded.map, view.location); }
+        catch (error) { if (!(error instanceof ClientMapError)) throw error; row.state = 'blocked'; row.client = null; row.code = error.code; row.reason = error.message; }
+      }
+      attach(row, item); continue;
+    }
     const key = view.gitCommonDir;
     const top = view.top ?? view.location;
     const main = dirname(view.gitCommonDir);
     const existing = rows.get(key);
-    if (existing !== undefined) {
-      add(key, () => existing, item);
-      // The main checkout names the row once it shows up among the workspaces.
-      if (view.top !== null && sameFile(main, view.top)) { existing.name = item.name; existing.linked = false; }
-      continue;
-    }
-    const row = blank(key, item);
+    if (existing !== undefined) { attach(existing, item); if (view.top !== null && sameFile(main, view.top)) existing.linked = false; continue; }
+    const row = blank(key, item, folderName(main), main);
     row.gitCommonDir = view.gitCommonDir; row.linked = view.top !== null && !sameFile(main, view.top);
     row.projectSuggestion = top.split('/').pop() ?? row.projectSuggestion;
     // Identity facts of the checkout itself (for an unbound repository to be added).
@@ -744,9 +876,9 @@ export function inspectProjects(items: { id: string; name: string; path: string 
       }
     }
     rows.set(key, row);
-    add(key, () => row, item);
+    attach(row, item);
   }
-  const projects = [...rows.values()].sort((a, b) => a.name.localeCompare(b.name) || a.key.localeCompare(b.key));
+  const projects = [...rows.values()].sort((a, b) => a.name.localeCompare(b.name) || a.repoName.localeCompare(b.repoName) || a.key.localeCompare(b.key));
   return { mapState, strict: loaded?.map.strict ?? false, pending: projects.filter(row => row.state === 'pending').length, projects };
 }
 
@@ -772,6 +904,21 @@ export function checkClientBinding(path: string, home: string) {
     rules: { rulesSha256: info.rulesSha256, effective: info.rules }, identity, warnings };
 }
 
+/** Non-blocking: a container that sits above other containers or mapped repositories. It never covers a Git repository
+ * (those keep their own binding), but the Human should see the overlap before saving. */
+export function containerWarnings(map: ClientMap): string[] {
+  const warnings: string[] = [];
+  const containers = map.containers ?? [];
+  for (const container of containers) {
+    const below = (path: string) => path !== container.path && ancestorsOf(path).some(ancestor => sameFile(ancestor, container.path));
+    const nested = containers.filter(other => below(other.path)).map(other => other.path);
+    const repositories = map.repositories.filter(entry => below(entry.gitCommonDir)).length;
+    if (nested.length > 0) warnings.push(`container ${container.path} (${container.client}) contains the containers ${nested.join(', ')}; the deepest container wins for each directory`);
+    if (repositories > 0) warnings.push(`container ${container.path} (${container.client}) contains ${repositories} mapped repositories; it does not cover Git repositories, each keeps its own binding`);
+  }
+  return warnings;
+}
+
 /** Host-specific checks shared by `clients validate` and the screen's draft
  * validation: every protected root and gitCommonDir exists on this host in its
  * canonical real-path spelling, and no two entries name one common-dir. */
@@ -784,6 +931,18 @@ export function checkMapHost(map: ClientMap): string[] {
   };
   map.protectedRoots.forEach((root, i) => canonicalPath(root, `protectedRoots[${i}]`));
   map.repositories.forEach((entry, i) => canonicalPath(entry.gitCommonDir, `repositories[${i}].gitCommonDir`));
+  (map.containers ?? []).forEach((entry, i) => {
+    canonicalPath(entry.path, `containers[${i}].path`);
+    const violation = containerViolation(entry.path, map);
+    if (violation !== null) errors.push(violation);
+  });
+  const containerKeys = new Map<string, string>();
+  for (const entry of map.containers ?? []) {
+    const key = inodeKey(entry.path);
+    if (key === null) continue;
+    const previous = containerKeys.get(key);
+    if (previous !== undefined) errors.push(`containers ${previous} and ${entry.path} name the same directory`); else containerKeys.set(key, entry.path);
+  }
   // A local-only entry promises ZERO remotes; one that gained a remote is drift.
   map.repositories.forEach((entry, i) => {
     if (entry.originSha256 !== null) return;
@@ -830,5 +989,6 @@ export function validateClients(home: string, catalogCheck: (parsed: unknown) =>
   const repositories = [...loaded.map.repositories].sort((a, b) => a.gitCommonDir.localeCompare(b.gitCommonDir))
     .map(({ client, project, gitCommonDir, originSha256 }) => ({ client, project, gitCommonDir, ...(loaded!.map.version === 2 ? { localOnly: originSha256 === null } : {}) }));
   return { ok: errors.length === 0, ...base, mapSha256: loaded.sha256, ...(loaded.map.version === 2 ? { mapVersion: 2, strict: loaded.map.strict } : {}), protectedRoots: [...loaded.map.protectedRoots].sort(),
-    clients, repositories, errors: [...errors].sort() };
+    clients, repositories,
+    ...(loaded.map.containers !== undefined ? { containers: [...loaded.map.containers].sort((a, b) => a.path.localeCompare(b.path)) } : {}), errors: [...errors].sort() };
 }

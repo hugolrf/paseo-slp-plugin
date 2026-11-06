@@ -475,7 +475,7 @@ test('capability: task deliver (resolveBinding) reads the same strict block and 
 
 test('the installed candidate advertises clientBinding alongside centralClients', async () => {
   const launch = await import('../plugin/server/runtime/cli/launch.ts');
-  assert.deepEqual(launch.FORMATION_CAPABILITIES, { existingPlacement: 1, peerPresets: 2, centralClients: 1, clientBinding: 1 });
+  assert.deepEqual(launch.FORMATION_CAPABILITIES, { existingPlacement: 1, peerPresets: 2, centralClients: 1, clientBinding: 1, clientContainers: 1 });
 });
 
 // ------------------------------------------------ correction round 1 (H1, H2, H4)

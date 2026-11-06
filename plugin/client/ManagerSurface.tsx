@@ -89,7 +89,7 @@ import { useLanguageCard } from "./cards/language.ts";
 import { useRoutingCard, RoutingCard } from "./cards/routing.tsx";
 import { useJevCard, JevCard, JEV_KIND_DEFAULT, JEV_KIND_LABEL } from "./cards/jev.tsx";
 import { usePeerPoolCard, PeerPoolCard } from "./cards/peer-pool.tsx";
-import { ClientsCard, useClientsCard } from "./cards/clients.tsx";
+import { ClientsCard, useClientsCard, workspaceOfEntry } from "./cards/clients.tsx";
 import { ClientPoolSession } from "./cards/client-pool.tsx";
 import { useSupervisionCard, SupervisionCard } from "./cards/supervision.tsx";
 
@@ -377,10 +377,7 @@ function ManagerSession({ host, layout, theme, navigation, params = {}, onSectio
     getClients: callGetClients, getClientFiles: callGetClientFiles, validate: callValidateClients,
     identify: callIdentify, listProjects: callListProjects, explain: callExplain, setClients: callSetClients,
     setClientPool: callSetClientPool, setClientProtocol: callSetClientProtocol,
-    listWorkspaces: async () => (await paseoApi.workspaces.list()).entries.flatMap(entry => {
-      const workspace = entry as { id: string; name?: string; workspaceDirectory?: string };
-      return typeof workspace.workspaceDirectory === "string" ? [{ id: workspace.id, name: workspace.name ?? workspace.workspaceDirectory, directory: workspace.workspaceDirectory }] : [];
-    }),
+    listWorkspaces: async () => (await paseoApi.workspaces.list()).entries.flatMap(workspaceOfEntry),
   };
   const clients = useClientsCard({ target, targetKey: key, api: clientsApi, update });
 

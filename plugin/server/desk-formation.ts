@@ -16,6 +16,7 @@ import type { DeskSeatCreateInputValue } from "../shared/delegation.ts";
 import type { MembershipValue } from "./desk-store.ts";
 import type { PeerSelectionRequest, SelectedPeer } from "./runtime/cli/seat-selection.ts";
 import type { TrustedLaunchContext } from "./runtime/cli/types.ts";
+import { mapHasContainers } from "./runtime/cli/clients.ts";
 import { FormationPlacementError, FormationPlacementUncertain, type FormationTargetPin, type FormationSourcePin, type createFormationPlacement } from "./desk-placement.ts";
 import { registeredMembership } from "./desk-membership.ts";
 import { DESK_FORMATION_REASONS, DESK_OPERATION_RETRY_RECOVERY } from "../shared/runtime/desk-contract.ts";
@@ -36,7 +37,7 @@ type FormationRequest = {
 };
 type FormationModule = {
   launchPlan(root: string, request: FormationRequest, context?: TrustedLaunchContext): Omit<Plan, "modeSupport">;
-  FORMATION_CAPABILITIES?: { existingPlacement?: number; peerPresets?: number; centralClients?: number; clientBinding?: number };
+  FORMATION_CAPABILITIES?: { existingPlacement?: number; peerPresets?: number; centralClients?: number; clientBinding?: number; clientContainers?: number };
   peerSelectionNeedsCapabilities?: typeof import("./runtime/cli/seat-selection.ts").peerSelectionNeedsCapabilities;
   preflightPeerChoice?: typeof import("./runtime/cli/seat-selection.ts").preflightPeerChoice;
   selectPeerSeat?: typeof import("./runtime/cli/seat-selection.ts").selectPeerSeat;
@@ -161,6 +162,10 @@ export function createFormationPlanner(deps: {
   // older one would read the client directory as a plain repository. The
   // client directory must also live under the home this planner resolves with.
   const requireCentral = (launch: FormationModule, context?: SelectionContext) => {
+    // A map with project-root containers (no Git) is unreadable to a candidate that predates them: say so, do not read it as "invalid".
+    if (launch.FORMATION_CAPABILITIES?.clientContainers !== 1 && mapHasContainers(deps.daemonHome)) {
+      throw new FormationPlanningError("CAPABILITY_GAP", "bound candidate lacks client containers (the client map declares them); refusing a divergent read");
+    }
     const pins = [context?.target?.source, context?.source, context?.centralPin].filter((pin): pin is FormationSourcePin => pin !== undefined);
     // A client binding (map version 2: strict, rules, local-only) is pinned and
     // read by the candidate; one that predates it would read the map as invalid

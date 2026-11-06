@@ -14,11 +14,12 @@ const colors = Object.fromEntries(['foreground', 'foregroundMuted', 'statusDange
 const baseMap = () => ({ version: 1, protectedRoots: ['/work'], clients: { ClienteA: { directory: 'clienteA' } },
   repositories: [{ client: 'ClienteA', project: 'grupo/api', gitCommonDir: '/work/api/.git', originSha256: H('a') }] });
 const clientsView = (map, sha = H('1'), extra = {}) => ({ schemaVersion: 1, canonicalHome: '/home/a', mapState: map ? 'valid' : 'absent', mapSha256: map ? sha : null, map,
-  mapError: null, hostErrors: [], mapExternalChange: false,
+  mapError: null, hostErrors: [], mapExternalChange: false, strict: false, containerWrites: { allowed: true, reason: null },
   clients: map ? Object.entries(map.clients).map(([name, { directory }]) => ({ name, directory, referenced: true, repositories: 1, routingSha256: H('2'), protocolSha256: H('3'), options: 1, error: null, externalChange: false })) : [], ...extra });
 const review = (over = {}) => ({ schemaVersion: 1, ok: true, errors: [], warnings: [], confirm: H('c'), affectedClients: ['ClienteA'], mapHashChanges: true, ...over });
 
-const projectRow = (over = {}) => ({ key: '/work/x/.git', state: 'pending', name: 'x', workspaceIds: ['wx'], paths: ['/work/x'], gitCommonDir: '/work/x/.git', originSha256: H('7'), localOnly: false,
+const projectRow = (over = {}) => ({ key: '/work/x/.git', kind: 'repository', containerBlocked: null, state: 'pending', name: 'x', projectId: null, projectLabel: null, projects: [], repoName: over.name ?? 'x', workspaceCount: 1, mainPath: '/work/x',
+  workspaceIds: ['wx'], paths: ['/work/x'], gitCommonDir: '/work/x/.git', originSha256: H('7'), localOnly: false,
   projectSuggestion: 'grupo/x', linked: false, client: null, code: null, reason: null, identity: null, ...over });
 const projectsView = (rows, extra = {}) => { const projects = rows ?? [
   projectRow({ key: '/work/api/.git', state: 'bound', name: 'api', workspaceIds: ['w1', 'w2'], paths: ['/work/api', '/work/api-wt'], gitCommonDir: '/work/api/.git', originSha256: H('a'), projectSuggestion: 'grupo/api', client: 'ClienteA' }),
@@ -555,4 +556,115 @@ test('F1: a row in CLIENT_IDENTITY_DRIFT is never re-fixed by "bind" (single or 
   assert.match(text, /Identidade salva/); assert.match(text, /Nova identidade/);
   assert.ok(buttons.some(b => b.label === 'Confirmar a nova identidade' && !b.disabled)); assert.ok(buttons.some(b => b.label === 'Aceitar a nova identidade'));
   assert.equal(buttons.filter(b => b.label === 'Vincular ao cliente escolhido' && b.disabled).length >= 2, true, 'plain bind is disabled for drifted rows');
+});
+
+// ---------------------------------------------------------------------------
+// Fase 3b: the row is the Paseo PROJECT; containers (folders without Git)
+// ---------------------------------------------------------------------------
+const folderRow = (over = {}) => projectRow({ key: 'path:/work/Geral', kind: 'folder', name: 'DWLaw / Geral', projectId: 'p-geral', projectLabel: 'DWLaw / Geral', projects: [{ id: 'p-geral', label: 'DWLaw / Geral' }],
+  repoName: 'Geral', workspaceCount: 2, mainPath: '/work/Geral', gitCommonDir: null, originSha256: null, projectSuggestion: 'Geral', ...over });
+const textOf = renderer => { const out = []; const walk = n => { if (n == null) return; if (typeof n === 'string') { out.push(n); return; } if (Array.isArray(n)) { n.forEach(walk); return; } (n.children ?? []).forEach(walk); }; walk(renderer.toJSON()); return out.join(' | '); };
+const buttonsOf = renderer => { const out = []; const walk = n => { if (n == null || typeof n === 'string') return; if (Array.isArray(n)) { n.forEach(walk); return; } if (n.props?.accessibilityRole === 'button') out.push({ label: n.props.accessibilityLabel, disabled: n.props.accessibilityState?.disabled === true }); (n.children ?? []).forEach(walk); }; walk(renderer.toJSON()); return out; };
+
+test('W1: the host descriptor becomes a workspace with its Paseo PROJECT (custom name wins, kinds validated, no directory = skipped, relative root dropped)', async t => {
+  const mod = await loadHooks(t);
+  const entry = { id: 'w1', name: 'Corrige erro 500', workspaceDirectory: '/work/api-wt', projectId: 'p1', projectDisplayName: 'CemigSim / client-area-api', projectCustomName: 'CemigSim / API', projectRootPath: '/work/api', projectKind: 'git', workspaceKind: 'worktree' };
+  assert.deepEqual(mod.workspaceOfEntry(entry), [{ id: 'w1', name: 'Corrige erro 500', directory: '/work/api-wt', projectId: 'p1', projectLabel: 'CemigSim / API', projectRootPath: '/work/api', projectKind: 'git', workspaceKind: 'worktree' }]);
+  assert.equal(mod.workspaceOfEntry({ ...entry, projectCustomName: null })[0].projectLabel, 'CemigSim / client-area-api');
+  assert.deepEqual(mod.workspaceOfEntry({ id: 'w2', name: 'n', directory: '/x', projectId: 'p', projectDisplayName: 'P', projectRootPath: 'relative', projectKind: 'weird', kind: 'local_checkout' }),
+    [{ id: 'w2', name: 'n', directory: '/x', projectId: 'p', projectLabel: 'P', workspaceKind: 'local_checkout' }], 'the SDK snapshot shape (directory/kind) also works; invalid values are dropped');
+  assert.deepEqual(mod.workspaceOfEntry({ id: 'w3', name: 'n' }), []); assert.deepEqual(mod.workspaceOfEntry(null), []);
+  assert.deepEqual(mod.workspaceOfEntry({ id: 'w4', name: 'n', workspaceDirectory: '/y' }), [{ id: 'w4', name: 'n', directory: '/y' }], 'an entry without project info still works');
+});
+
+test('W1/W2: the card sends the project fields with every workspace, and a repository with 3 worktrees + 1 local checkout is ONE row named by the project with "4 workspaces"', async t => {
+  const workspaces = [{ id: 'a', name: 'main', directory: '/work/api', projectId: 'p1', projectLabel: 'CemigSim / client-area-api', projectKind: 'git', workspaceKind: 'local_checkout' },
+    ...['b', 'c', 'd'].map((id, i) => ({ id, name: `tarefa ${i}`, directory: `/work/api-wt${i}`, projectId: 'p1', projectLabel: 'CemigSim / client-area-api', projectKind: 'git', workspaceKind: 'worktree' }))];
+  const row = projectRow({ key: '/work/api/.git', name: 'CemigSim / client-area-api', projectId: 'p1', projectLabel: 'CemigSim / client-area-api', projects: [{ id: 'p1', label: 'CemigSim / client-area-api' }], repoName: 'api', workspaceCount: 4, mainPath: '/work/api', gitCommonDir: '/work/api/.git', workspaceIds: ['a', 'b', 'c', 'd'] });
+  let sentInput = null;
+  const { api } = makeApi({ listWorkspaces: async () => workspaces, listProjects: async input => { sentInput = input; return projectsView([row]); } });
+  const m = await mount(t, api);
+  const sent = sentInput.workspaces;
+  assert.deepEqual(sent[1], { id: 'b', name: 'tarefa 0', path: '/work/api-wt0', projectId: 'p1', projectLabel: 'CemigSim / client-area-api', projectKind: 'git', workspaceKind: 'worktree' }, 'flat optional fields, directory renamed to path');
+  assert.equal(m.state().projectRows.length, 1); assert.equal(m.state().projectRows[0].workspaceCount, 4);
+  const mod = m.mod; mod.primitiveState.tree = true;
+  let renderer; await act(async () => { renderer = TestRenderer.create(React.createElement(mod.ClientsCard, { colors, compact: false, state: m.state(), poolSlot: null })); });
+  t.after(async () => { await act(async () => renderer.unmount()); });
+  const text = textOf(renderer);
+  assert.match(text, /CemigSim \/ client-area-api/); assert.match(text, /Workspaces \| 4/); assert.match(text, /Checkout principal \| \/work\/api/);
+  for (const title of ['tarefa 0', 'tarefa 1', 'tarefa 2']) assert.equal(text.includes(title), false, 'a workspace title is never shown as the row');
+});
+
+test('W4/(a): a project with several repositories is grouped under its name with one row per repository; two projects for one repository warn about the duplicate', async t => {
+  const rows = [
+    projectRow({ key: '/w/a/.git', name: 'DWLaw / Portal', projectId: 'pp', projectLabel: 'DWLaw / Portal', projects: [{ id: 'pp', label: 'DWLaw / Portal' }], repoName: 'portal-api', mainPath: '/w/a', gitCommonDir: '/w/a/.git', originSha256: H('a') }),
+    projectRow({ key: '/w/b/.git', name: 'DWLaw / Portal', projectId: 'pp', projectLabel: 'DWLaw / Portal', projects: [{ id: 'pp', label: 'DWLaw / Portal' }], repoName: 'portal-web', mainPath: '/w/b', gitCommonDir: '/w/b/.git', originSha256: H('b') }),
+    projectRow({ key: '/w/p/.git', name: 'Pessoal / Paseo Plugins', projectId: 'p1', projectLabel: 'Pessoal / Paseo Plugins', projects: [{ id: 'p2', label: 'Pessoal / Paseo Plugins' }, { id: 'p1', label: 'Pessoal / paseo-plugins' }], repoName: 'paseo-plugins', mainPath: '/w/p', gitCommonDir: '/w/p/.git', originSha256: H('c') }),
+  ];
+  const { api } = makeApi({ listProjects: async () => projectsView(rows) });
+  const m = await mount(t, api);
+  const mod = m.mod; mod.primitiveState.tree = true;
+  let renderer; await act(async () => { renderer = TestRenderer.create(React.createElement(mod.ClientsCard, { colors, compact: false, state: m.state(), poolSlot: null })); });
+  t.after(async () => { await act(async () => renderer.unmount()); });
+  const text = textOf(renderer);
+  assert.match(text, /DWLaw \/ Portal \| 2 repositórios/); assert.match(text, /portal-api/); assert.match(text, /portal-web/);
+  assert.match(text, /Projetos duplicados para um mesmo repositório: Pessoal \/ Paseo Plugins \| Pessoal \/ paseo-plugins\. Um único vínculo cobre todos/);
+});
+
+test('W5: the client prefix of the project label is only a SUGGESTION — shown, pre-selected on pick, never bound until a human acts', async t => {
+  const mod = await loadHooks(t);
+  assert.equal(mod.suggestedClientOf('CemigSim / client-area-api', ['ClienteA', 'cemigsim']), 'cemigsim', 'case-insensitive match against the map\'s clients');
+  assert.equal(mod.suggestedClientOf('Financeiro', ['Financeiro']), 'Financeiro'); assert.equal(mod.suggestedClientOf('Outro / x', ['ClienteA']), null); assert.equal(mod.suggestedClientOf(null, ['ClienteA']), null);
+  const row = projectRow({ key: '/w/c/.git', name: 'ClienteA / api', projectId: 'p', projectLabel: 'ClienteA / api', projects: [{ id: 'p', label: 'ClienteA / api' }], repoName: 'api', mainPath: '/w/c', gitCommonDir: '/w/c/.git' });
+  const { api, calls } = makeApi({ listProjects: async () => projectsView([row]) });
+  const m = await mount(t, api);
+  assert.equal(m.state().projectRows[0].suggestedClient, 'ClienteA');
+  assert.deepEqual([m.state().dirty, m.state().bindTo, m.state().map.repositories.length], [false, null, 1], 'loading binds nothing');
+  await act(async () => m.state().pickProject('/w/c/.git', true));
+  assert.equal(m.state().bindTo, 'ClienteA', 'the suggestion is pre-selected'); assert.equal(m.state().dirty, false, 'but nothing is bound');
+  await act(async () => m.state().setBindTo('Outro')); await act(async () => m.state().pickProject('/w/c/.git', false)); await act(async () => m.state().pickProject('/w/c/.git', true));
+  assert.equal(m.state().bindTo, 'Outro', 'a choice already made is not overridden');
+  assert.equal(calls.filter(([n]) => n === 'setClients').length, 0);
+  const mod2 = m.mod; mod2.primitiveState.tree = true;
+  let renderer; await act(async () => { renderer = TestRenderer.create(React.createElement(mod2.ClientsCard, { colors, compact: false, state: m.state(), poolSlot: null })); });
+  t.after(async () => { await act(async () => renderer.unmount()); });
+  assert.match(textOf(renderer), /Cliente sugerido: ClienteA/); assert.ok(buttonsOf(renderer).some(b => b.label === 'Vincular a ClienteA' && !b.disabled), 'an explicit button, pressed by a human');
+});
+
+test('containers: a folder without Git binds as a container only when the server says the runtime can read it; HOME is never bindable; a folder above other projects needs its own confirmation; unbind removes it', async t => {
+  const geral = folderRow();
+  const home = folderRow({ key: 'path:/home/u', name: 'Pessoal / Casa', projectId: 'p-casa', projectLabel: 'Pessoal / Casa', projects: [{ id: 'p-casa', label: 'Pessoal / Casa' }], repoName: 'u', mainPath: '/home/u', state: 'not-git', containerBlocked: 'container /home/u is the user home, a system root or a folder that contains the home: it would cover everything, so it can never be bound', reason: 'x' });
+  const inner = projectRow({ key: '/work/Geral/repo/.git', name: 'Repo', mainPath: '/work/Geral/repo', gitCommonDir: '/work/Geral/repo/.git', originSha256: H('9') });
+  const { api, calls } = makeApi({ listProjects: async () => projectsView([geral, home, inner]) });
+  const m = await mount(t, api);
+  assert.deepEqual([m.state().canBind(m.state().projectRows[0]), m.state().canBind(m.state().projectRows[1])], [true, false], 'HOME is not bindable');
+  await act(async () => m.state().bindProjects(['path:/home/u'], 'ClienteA'));
+  assert.equal(m.state().dirty, false); assert.match(m.state().errorText, /None of the selected projects can be bound/);
+  assert.equal(m.state().coversOf(m.state().projectRows[0]), 1, 'one Git repository sits below the folder');
+  await act(async () => m.state().bindProjects(['path:/work/Geral'], 'ClienteA'));
+  assert.equal(m.state().dirty, false, 'unconfirmed: nothing is bound'); assert.match(m.state().errorText, /separate confirmation/);
+  await act(async () => m.state().confirmCover('path:/work/Geral'));
+  await act(async () => m.state().bindProjects(['path:/work/Geral'], 'ClienteA'));
+  assert.deepEqual(m.state().map.containers, [{ client: 'ClienteA', project: 'DWLaw / Geral', path: '/work/Geral' }]);
+  assert.equal(m.state().map.version, 2, 'containers need version 2'); assert.equal(m.state().projectRows[0].draftClient, 'ClienteA');
+  assert.equal(calls.filter(([n]) => n === 'setClients').length, 0, 'nothing is saved by binding');
+  await act(async () => m.state().unbindProject('path:/work/Geral'));
+  assert.equal('containers' in m.state().map, false);
+});
+
+test('containers: without the capability the folder row shows the server reason in Portuguese and offers no bind', async t => {
+  const geral = folderRow();
+  const view = clientsView(baseMap(), H('1'), { containerWrites: { allowed: false, reason: 'containers are not saved: the bound runtime does not declare clientContainers; update the runtime first' } });
+  const { api, setCurrent } = makeApi({ listProjects: async () => projectsView([geral]) });
+  setCurrent(view);
+  const m = await mount(t, api);
+  assert.equal(m.state().canBind(m.state().projectRows[0]), false); assert.equal(m.state().containerOk, false);
+  await act(async () => m.state().bindProjects(['path:/work/Geral'], 'ClienteA'));
+  assert.equal(m.state().dirty, false);
+  const mod = m.mod; mod.primitiveState.tree = true;
+  let renderer; await act(async () => { renderer = TestRenderer.create(React.createElement(mod.ClientsCard, { colors, compact: false, state: m.state(), poolSlot: null })); });
+  t.after(async () => { await act(async () => renderer.unmount()); });
+  const text = textOf(renderer);
+  assert.match(text, /Pasta sem Git/); assert.match(text, /Pasta do projeto \| \/work\/Geral/); assert.match(text, /pastas de projeto não são salvas: o runtime vinculado não declara clientContainers/);
+  assert.ok(buttonsOf(renderer).filter(b => /^Vincular/.test(b.label ?? '')).every(b => b.disabled));
 });

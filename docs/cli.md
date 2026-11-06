@@ -661,9 +661,10 @@ writing. It prints one deterministic JSON report (`ok`, `mapSha256`, sorted
 protected root does not exist on this host or is not in canonical real-path form,
 two entries name one common-dir, or any client pool/protocol is missing,
 symlinked, oversized or fails Peer-pool validation. A version 2 map adds
-`mapVersion`, `strict`, per-client `rulesSha256` and per-repository `localOnly`
-(a version 1 report is unchanged), and a local-only entry whose repository now
-has a remote is an error. See
+`mapVersion`, `strict`, per-client `rulesSha256`, per-repository `localOnly` and, when
+the map declares them, `containers` (project folders without Git; a report without
+containers is unchanged, and so is a version 1 report), and a local-only entry whose repository now
+has a remote is an error, and so is a container that is the home, a system root or above a protected root. See
 [the central client map](operations.md#central-client-map-pool-and-protocol-per-client-outside-repositories).
 
 ## `clients check`
