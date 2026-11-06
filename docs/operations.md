@@ -1060,6 +1060,29 @@ A live holder, unreadable lock or uncertain identity stays untouched. Hosts
 without a process-start probe use ESRCH only; a live PID in an old-format lock
 cannot prove PID reuse from its nonce or wall-clock timestamp alone.
 
+The bridge holds this lock for the whole plugin lifetime and releases it in
+`stop()` and on the failure paths of `start()`, so a lock file whose `pid` is
+the live host process and whose `instanceNonce` is the running bridge's is the
+live bridge, not a leak. A refusal now names repoKey, lock path, pid, nonce and
+age (from `startedAt`), and tells three cases apart: another live process
+(`desk-busy`, wait or ask its owner), the same pid with a different nonce
+(another or previous bridge instance in the same process, possibly still alive),
+and a dead or uncertain holder (`RECOVERY_REQUIRED`). Nothing removes a live or
+same-process holder automatically, and `desk-recover` refuses a live pid, so
+for the same-process case restart or reload the plugin/daemon that owns the
+pid. Where there is no process-start identity (anything but Linux/WSL, so macOS
+too) the same pid with another nonce can also be an orphan lock of a dead
+process whose pid was reused: nothing can tell the two apart, so remove the file
+by hand, under maintenance authority, only after proving that no live bridge or
+store instance uses it.
+A failed acquire unlinks the lock file it just created, checking identity (same
+device and inode) while its descriptor is still open; if the identity cannot be
+confirmed the file is left and the failure says so. A release whose unlink
+fails for any reason other than the file already being gone logs a warning with
+repoKey, path, pid, nonce and cause; the logging channel itself can never change
+the release, a commit result or an error. Removing a lock of another instance
+automatically is deliberately not implemented.
+
 If the plugin dies after creating `recover.lock` but before cleaning it up,
 a later start can report `recover-lock-orphan` and `RECOVERY_REQUIRED`. This
 also applies to the automatic recovery path: it never removes an orphaned

@@ -77,7 +77,19 @@ import {
 import { SETTLEMENT_VIA } from "./desk-records.ts";
 import { ROLES } from "../shared/runtime/families.ts";
 import { canonicalJson, canonicalSha256, sha256Hex } from "./config-view.ts";
-import { classifyLockHolderProcess, parseLockHolder, type LockHolder } from "./runtime/lock-holder.ts";
+import {
+  classifyLockHolderProcess,
+  createdLockFile,
+  describeLockHolder,
+  describeLockPath,
+  leftLockNote,
+  parseLockHolder,
+  relateLockHolder,
+  removeCreatedLockFile,
+  type CreatedLockCleanup,
+  type CreatedLockFile,
+  type LockHolder,
+} from "./runtime/lock-holder.ts";
 import {
   ensurePrivateDirectory,
   fsyncDirectory,
@@ -1349,6 +1361,10 @@ export interface DeskStoreFaults {
   segmentRenamed?: () => void | Promise<void>;
   ledgerCommitted?: () => void | Promise<void>;
   afterComplete?: () => void | Promise<void>;
+  /** Synchronous, right after the lock file is created (`created`) and after
+   *  its holder record is written (`written`); a hook may throw to model an
+   *  I/O failure at that point. */
+  lockStage?: (stage: "created" | "written" | "cleanup", fd: number) => void;
 }
 
 export interface DeskStoreDeps {
@@ -1357,6 +1373,9 @@ export interface DeskStoreDeps {
   uuid?: () => string;
   now?: () => Date;
   faults?: DeskStoreFaults;
+  /** Explicit, non-fatal diagnostics (default console.warn) — today only a
+   *  lock-release failure that must not rewrite a durable commit's result. */
+  warn?: (line: string) => void;
 }
 
 export interface DeskStore {
@@ -3390,7 +3409,9 @@ export function createDeskStore(deps: DeskStoreDeps): DeskStore {
 
   /** wx-create the lockfile and retry until lockWaitMs expires; on expiry,
    *  classify the holder — a live pid answers desk-busy, anything else is
-   *  RECOVERY_REQUIRED. The file is never deleted or overwritten. */
+   *  RECOVERY_REQUIRED. The file is never deleted or overwritten, except the
+   *  half-created file THIS call made when writing its own holder record
+   *  failed (identity-checked, see removeCreatedLockFile). */
   async function acquireLock(repoKey: string): Promise<{ held: true } | { rejection: DeskRejectionValue }> {
     const path = repoPaths(repoKey).lockPath;
     const content = JSON.stringify({
@@ -3400,18 +3421,33 @@ export function createDeskStore(deps: DeskStoreDeps): DeskStore {
     });
     const deadline = Date.now() + LEDGER_LIMITS.lockWaitMs;
     for (;;) {
+      let cleanup: CreatedLockCleanup | null = null;
       try {
         const fd = openSync(path, "wx", PRIVATE_FILE_MODE);
+        let created: CreatedLockFile | null = null;
         try {
+          created = createdLockFile(fd);
+          faults.lockStage?.("created", fd);
           writeSync(fd, content);
+          faults.lockStage?.("written", fd);
           fsyncSync(fd);
+        } catch (error) {
+          // A lock file created here but never completed would carry this
+          // instance's identity forever. Verify and remove it while the fd
+          // is still open (the inode cannot be reused), and only it.
+          try { faults.lockStage?.("cleanup", fd); } catch { /* test seam only */ }
+          cleanup = removeCreatedLockFile(path, created);
+          throw error;
         } finally {
           closeSync(fd);
         }
         return { held: true };
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
-          throw new OperationConflict("IO_FAILURE", `cannot create desk lock: ${summarize(error)}`);
+          throw new OperationConflict(
+            "IO_FAILURE",
+            `cannot create desk lock: ${summarize(error)}${cleanup === null ? "" : leftLockNote(cleanup, path)}`,
+          );
         }
         if (Date.now() < deadline) {
           await faults.lockWait?.();
@@ -3429,13 +3465,35 @@ export function createDeskStore(deps: DeskStoreDeps): DeskStore {
         }
         if (holder !== null) {
           const { pid, instanceNonce: holderNonce } = holder;
+          const facts = describeLockHolder({ repoKey, lockPath: path, holder, nowMs: now().getTime() });
           const state = classifyLockHolderProcess(pid, pid => process.kill(pid, 0));
           if (state === "alive" || state === "eperm") {
+            // pid alone cannot tell "another process" from a previous or
+            // parallel instance in THIS process (same pid, other nonce).
+            const relation = relateLockHolder(holder, { pid: process.pid, instanceNonce });
+            if (relation === "self") {
+              return {
+                rejection: rejection(
+                  "CAPABILITY_GAP",
+                  `desk lock still owned by this instance (a previous commit did not release it); ${facts}`,
+                  "desk-busy: this instance still owns the lock — restart the plugin/daemon, or remove it by hand under maintenance authority only after confirming no commit is in flight",
+                ),
+              };
+            }
+            if (relation === "same-process-other-instance") {
+              return {
+                rejection: rejection(
+                  "CAPABILITY_GAP",
+                  `desk lock held by another instance in the same process (this instance is nonce ${instanceNonce}) — a parallel instance or a leftover of a previous one; ${facts}`,
+                  `desk-busy: not removed automatically and desk-recover refuses a live pid; restart or reload the plugin/daemon that owns pid ${pid}. Without a process-start identity (Linux/WSL only) pid reuse cannot be excluded, so this may also be an orphan of a dead process; remove it by hand under maintenance authority only after proving no live bridge or store instance uses it`,
+                ),
+              };
+            }
             return {
               rejection: rejection(
                 "CAPABILITY_GAP",
-                `desk lock held by live pid ${pid} (instance ${holderNonce})`,
-                "desk-busy: another instance holds the repo lock",
+                `desk lock held by live pid ${pid} in another process (instance ${holderNonce}); ${facts}`,
+                "desk-busy: another process holds the repo lock — wait and retry; if that owner is gone, run desk-recover <repository> under maintenance authority (it refuses a live pid); never delete a live holder's lock",
               ),
             };
           }
@@ -3443,16 +3501,16 @@ export function createDeskStore(deps: DeskStoreDeps): DeskStore {
           return {
             rejection: rejection(
               "RECOVERY_REQUIRED",
-              `desk lock holder pid ${pid} is dead or undetermined (instance ${holderNonce}) — stale lock, recovery is P2-e`,
-              "manual desk-lock recovery under maintenance authority",
+              `desk lock holder pid ${pid} is dead or undetermined (instance ${holderNonce}) — stale lock; ${facts}`,
+              "manual desk-lock recovery under maintenance authority: node bin/slp.mjs desk-recover <repository>",
             ),
           };
         }
         return {
           rejection: rejection(
             "RECOVERY_REQUIRED",
-            "desk lock is unreadable or unparseable — stale lock, recovery is P2-e",
-            "manual desk-lock recovery under maintenance authority",
+            `desk lock is unreadable or unparseable — stale lock; ${describeLockPath({ repoKey, lockPath: path })}`,
+            "manual desk-lock recovery under maintenance authority: node bin/slp.mjs desk-recover <repository>",
           ),
         };
       }
@@ -3472,7 +3530,12 @@ export function createDeskStore(deps: DeskStoreDeps): DeskStore {
     }
     const holder = parseLockHolder(content);
     if (holder?.pid !== process.pid || holder.instanceNonce !== instanceNonce) {
-      throw new OperationConflict("IO_FAILURE", `desk lock at ${path} is not owned by this instance — left in place`);
+      throw new OperationConflict(
+        "IO_FAILURE",
+        `desk lock at ${path} is not owned by this instance (holder ${
+          holder === null ? "unparseable" : `pid ${holder.pid}, nonce ${holder.instanceNonce}`
+        }; this instance nonce ${instanceNonce}; repoKey ${repoKey}) — left in place`,
+      );
     }
     try {
       unlinkSync(path);
@@ -3549,6 +3612,16 @@ export function createDeskStore(deps: DeskStoreDeps): DeskStore {
     return { ok: true };
   }
 
+  /** Acquire, run the commit protocol, release. The lock is released on
+   *  every exit, and a failing release never replaces what the protocol
+   *  already decided:
+   *   - success or a returned rejection + release failure → the result is
+   *     returned unchanged (the ledger commit is already durable and replays
+   *     idempotently), and the failure is reported once through `deps.warn`
+   *     with repoKey, lock path and cause; the lock is left in place and the
+   *     next acquire diagnoses it;
+   *   - thrown error + release failure → the original error is rethrown with
+   *     the release failure appended, keeping the original conflict code. */
   async function commit(
     repoKey: string,
     envelope: DeskStoreEnvelope,
@@ -3560,310 +3633,350 @@ export function createDeskStore(deps: DeskStoreDeps): DeskStore {
     ensureRepoDir(repoKey);
     const lock = await acquireLock(repoKey);
     if ("rejection" in lock) return lock.rejection;
+    let result: TransactResult | undefined;
+    let failed = false;
+    let failure: unknown;
     try {
-      // The deterministic-concurrency barrier (C1–C3): the holder pauses
-      // while owning the lockfile; other processes' acquire retries observe
-      // it exactly like a slow writer.
-      await faults.lockHeld?.();
-      const state = read(repoKey);
-      if (state.state !== "ok" && state.state !== "absent") {
-        return rejection(
-          "STATE_UNREADABLE",
-          `desk ledger is ${state.state} (${state.diagnostics.code}${state.diagnostics.schemaVersion !== null ? `, schemaVersion ${state.diagnostics.schemaVersion}` : ""})`,
-          "inspect the ledger under maintenance authority and restore or re-initialize it",
-        );
-      }
-      const ledger = state.state === "absent" ? freshLedger(envelope.repo, repoKey) : state.ledger;
-      // An older-version ledger read under this lock migrates in-memory;
-      // this commit is the first write after the bump, so it records the
-      // current schemaVersion plus the schema-migrated event (contract §2).
-      const migratedFrom =
-        state.state === "ok" && state.persistedSchemaVersion < LEDGER_SCHEMA_VERSION
-          ? state.persistedSchemaVersion
-          : null;
-      if (state.state === "ok") {
-        if (ledger.repo.hostId !== envelope.repo.hostId || ledger.repo.gitCommonDir !== envelope.repo.gitCommonDir) {
-          return invalidRecord("envelope repo does not match the ledger's repo binding", "transact against the repo the ledger is bound to");
-        }
-      }
-      // Idempotency precedes every other guard: the recorded outcome replays
-      // verbatim — a committed receipt returns its record's fields, a
-      // rejected request returns the rejection it committed.
-      const prior = ledger.requests.find(
-        record =>
-          record.actorKey === envelope.actorKey &&
-          record.assignmentId === envelope.assignmentId &&
-          record.requestId === envelope.requestId,
-      );
-      if (prior !== undefined) {
-        if (prior.bodySha256 !== bodySha256) {
-          return rejection(
-            "IDEMPOTENCY_CONFLICT",
-            `requestId ${envelope.requestId} was recorded with a different body`,
-            "resubmit under a new requestId or resend the identical body",
-          );
-        }
-        if (prior.outcome === "rejected") return prior.rejection!;
-        return {
-          ok: true,
-          receipt: {
-            receiptId: prior.receiptId,
-            revision: prior.revision,
-            replayed: true,
-            eventSeqs: prior.eventSeqs,
-          },
-        };
-      }
-      // Re-open and verify the complete prior chain while holding the
-      // writer lock. The read performed above is not used as a cached tip:
-      // v7 entry refinements are bound to these freshly verified events.
-      const priorEventHistory = verifyChain(repoKey, ledger);
-      if (priorEventHistory === null) {
-        return rejection("STATE_UNREADABLE", "desk event history became unverifiable before commit", "restore the complete verified event chain before retrying");
-      }
-      if (ledger.requests.length >= LEDGER_LIMITS.requests) {
-        return invalidRecord(
-          `requests table is full (${LEDGER_LIMITS.requests})`,
-          "maintenance compaction required",
-        );
-      }
-      // One pure post-state resolver owns the complete obligation graph. It
-      // sees legacy and task tables together, so rejected/ordinary commits
-      // retain the same request/byte floor and exact task/membership/scope
-      // credits are consumed only by their durable after-state facts.
-      // decide is synchronous and pure — a thenable or a throw is a caller
-      // error, recorded nowhere.
-      let outcome: unknown;
-      try {
-        const snapshot = deepFreeze(structuredClone(ledger));
-        verifiedHistory.set(snapshot, priorEventHistory);
-        outcome = decide(snapshot, envelope.command);
-      } catch (error) {
-        return invalidRecord(`decide threw: ${summarize(error)}`, "fix the decide function and resubmit");
-      }
-      if (isThenable(outcome)) {
-        return invalidRecord("decide must be synchronous — it returned a promise", "return the decision synchronously");
-      }
-      if (!isRecord(outcome) || (outcome.ok !== true && outcome.ok !== false)) {
-        return invalidRecord("decide must return {ok:true, events} or a DeskRejection", "return a valid decision shape");
-      }
-      if (outcome.ok === false) {
-        const parsed = DeskRejection.safeParse(outcome);
-        if (!parsed.success) {
-          return invalidRecord(`decide returned a malformed rejection: ${firstIssue(parsed.error)}`, "return a schema-valid DeskRejection");
-        }
-      }
-      const decided = outcome as DecideOutcome;
-      const decidedEvents = decided.ok === true ? decided.events : [];
-      if (!Array.isArray(decidedEvents)) {
-        return invalidRecord("decide must return an events array", "return {ok:true, events:[...]}");
-      }
-      // E-P2C-2 — the migration event rides the first SUCCESSFUL commit
-      // after an in-memory bump. A rejection on an older-version ledger
-      // commits into the persisted shape (no new tables, no event); the
-      // next successful commit migrates.
-      const events =
-        migratedFrom !== null && decided.ok === true
-          ? [{ kind: "schema-migrated", payload: { from: migratedFrom, to: LEDGER_SCHEMA_VERSION } }, ...decidedEvents]
-          : decidedEvents;
-      const eventsCheck = checkDecideEvents(events);
-      if ("rejection" in eventsCheck) return eventsCheck.rejection;
-
-      // §2.2 — the decide → state channels, checked after decide and before
-      // the segment write, schema-level only: each replacement table must
-      // parse strict and the candidate ledger (all channels applied) must
-      // pass the same refinements read() applies. A violation is a
-      // consumer error — INVALID_RECORD, nothing recorded (the
-      // decide-threw branch of P2-a step 5).
-      const nextTables = tableSnapshot(ledger);
-      if (decided.ok === true) {
-        const proposed: LedgerTableName[] = [];
-        for (const name of LEDGER_TABLE_NAMES) {
-          if (decided[name] === undefined) continue;
-          proposed.push(name);
-          const error = replaceTable(nextTables, name, decided[name]);
-          if (error !== null) {
-            return invalidRecord(
-              `decide returned invalid ${name}: ${firstIssue(error)}`,
-              `fix the decide function to return a schema-valid ${name} table`,
-            );
-          }
-        }
-        if (proposed.length > 0) {
-          const candidateInvalid = checkRefinements({ ...ledger, ...nextTables }, repoKey);
-          if (candidateInvalid !== null) {
-            return invalidRecord(
-              `decide returned invalid ${proposed.length === 1 ? proposed[0] : "state tables"} (refinement failed)`,
-              "fix the decide function to return tables that satisfy the ledger refinements",
-            );
-          }
-        }
-      }
-
-      const reserve = resolveDeskTaskCapacityReserve({
-        taskEntries: nextTables.taskEntries,
-        memberships: nextTables.memberships,
-        assignments: nextTables.assignments,
-        scopes: nextTables.scopes,
-        scopeTransitions: nextTables.scopeTransitions,
-      }, { eventPayloadBytes: LEDGER_LIMITS.eventPayloadBytes });
-      const assignmentSeatOverflow = nextTables.assignments.some(assignment => {
-        const seats = Array.isArray(assignment.seats) ? assignment.seats.length : 0;
-        const id = typeof assignment.assignmentId === "string" ? assignment.assignmentId : "";
-        return seats + (reserve.assignmentSeats.get(id) ?? 0) > LEDGER_LIMITS.assignmentSeats;
-      });
-      if (ledger.requests.length + 1 + reserve.requests > LEDGER_LIMITS.requests ||
-          nextTables.taskEntries.length + reserve.taskEntries > LEDGER_LIMITS.taskEntries ||
-          nextTables.memberships.length + reserve.memberships > LEDGER_LIMITS.memberships ||
-          nextTables.scopes.length + reserve.scopes > LEDGER_LIMITS.scopes ||
-          nextTables.scopeTransitions.length + reserve.scopeTransitions > LEDGER_LIMITS.scopeTransitions ||
-          assignmentSeatOverflow) {
-        return invalidRecord("commit would consume retained task stop/recovery capacity", "retain immutable history; advance an exact unresolved obligation or settle within the reserved credit budget");
-      }
-      const receiptId = uuid();
-      const revision = ledger.revision + 1;
-      const rejectionForRecord = decided.ok === false ? (decided as DeskRejectionValue) : null;
-      const stamp = now().toISOString();
-      let eventSeqs: [number, number] | null = null;
-      let lastEventSeq = ledger.lastEventSeq;
-      let lastEventSha256 = ledger.lastEventSha256;
-
-      // Build the chain in memory first: the serialized-byte check below
-      // must fire before ANY durable write, so the event segment only lands
-      // after the candidate ledger is proven to fit LEDGER_LIMITS.ledgerBytes.
-      // Seqs continue lastEventSeq, prevSha256 links to the prior event's
-      // digest (or the recorded tip).
-      const built: EventValue[] = [];
-      if (decided.ok === true && events.length > 0) {
-        let prev = ledger.lastEventSha256;
-        for (const event of events) {
-          const seq = lastEventSeq + 1;
-          const withoutDigest = {
-            seq,
-            prevSha256: prev,
-            at: stamp,
-            requestId: envelope.requestId,
-            actorKey: envelope.actorKey,
-            assignmentId: envelope.assignmentId,
-            kind: event.kind,
-            payload: event.payload,
-          };
-          const sha256 = canonicalSha256(withoutDigest);
-          built.push({ ...withoutDigest, sha256 });
-          prev = sha256;
-          lastEventSeq = seq;
-        }
-        lastEventSha256 = prev;
-        eventSeqs = [built[0]!.seq, built[built.length - 1]!.seq];
-      }
-
-      const record: RequestRecordValue = {
-        actorKey: envelope.actorKey,
-        assignmentId: envelope.assignmentId,
-        requestId: envelope.requestId,
-        bodySha256,
-        canonicalization: CANONICALIZATION,
-        receiptId,
-        revision,
-        outcome: decided.ok === true ? "committed" : "rejected",
-        eventSeqs,
-        rejection: rejectionForRecord,
-      };
-      const candidate: LedgerValue = {
-        ...ledger,
-        revision,
-        updatedAt: stamp,
-        lastEventSeq,
-        lastEventSha256,
-        requests: [...ledger.requests, record],
-        ...nextTables,
-      };
-      // The pre-commit refinement pass is the same one read() applies — a
-      // ledger that would read as unsafe/corrupt is never written.
-      const invalid = checkRefinements(candidate, repoKey, [...priorEventHistory, ...built]);
-      if (invalid !== null) {
-        throw new OperationConflict("IO_FAILURE", "refusing to commit a ledger that would not read back cleanly");
-      }
-      // E-P2C-2 — a rejection on an older-version ledger keeps the on-disk
-      // shape at that version: the migrated tables are dropped and the
-      // version literal stays at the persisted value, so the bump (with
-      // its schema-migrated event) happens on the first successful commit
-      // instead.
-      let nextBytes: string;
-      if (migratedFrom !== null && decided.ok === false) {
-        const persistedShape = persistedLedgerShape(candidate, migratedFrom);
-        const persistedParses = LEDGER_SCHEMAS[migratedFrom].safeParse(persistedShape).success;
-        if (!persistedParses) {
-          throw new OperationConflict("IO_FAILURE", "refusing to commit a ledger that would not read back cleanly");
-        }
-        nextBytes = JSON.stringify(persistedShape, null, 2) + "\n";
-      } else {
-        if (!LedgerSchema.safeParse(candidate).success) {
-          throw new OperationConflict("IO_FAILURE", "refusing to commit a ledger that would not read back cleanly");
-        }
-        nextBytes = JSON.stringify(candidate, null, 2) + "\n";
-      }
-      // The serialized-byte cap is the durable bound: read() classifies a
-      // ledger file above LEDGER_LIMITS.ledgerBytes as corrupt, so a commit
-      // that would push past it is refused BEFORE any durable write — an
-      // oversized file would silently drop every acknowledged mutation. The
-      // rejection is unrecorded (a record is itself part of the bytes).
-      // Non-recovery commits additionally hold the recovery byte slice back
-      // so a settle/recovery commit can always land.
-      const nextSize = Buffer.byteLength(nextBytes, "utf8");
-      const byteLimit = LEDGER_LIMITS.ledgerBytes - reserve.bytes;
-      if (nextSize > byteLimit) {
-        return invalidRecord(
-          nextSize > LEDGER_LIMITS.ledgerBytes
-            ? `the committed ledger would be ${nextSize} bytes — over the ${LEDGER_LIMITS.ledgerBytes}-byte cap`
-            : `the committed ledger would be ${nextSize} bytes — inside the ${reserve.bytes}-byte recovery reserve`,
-          "maintenance compaction required before more desk mutations",
-        );
-      }
-      if (eventSeqs !== null) {
-        const evDir = repoPaths(repoKey).eventsDir;
-        ensurePrivateDirectory(evDir, platform);
-        const segmentPath = join(evDir, `${eventSeqs[0]}-${eventSeqs[1]}.jsonl`);
-        const temp = `${segmentPath}.${uuid()}.tmp`;
-        let fd: number | null = null;
+      result = await commitUnderLock(repoKey, envelope, decide, bodySha256);
+    } catch (error) {
+      failed = true;
+      failure = error;
+    }
+    try {
+      releaseLock(repoKey);
+    } catch (releaseError) {
+      const lockPath = repoPaths(repoKey).lockPath;
+      if (!failed) {
+        // The report is best effort: a failing sink must not replace the
+        // result that is already durable.
         try {
-          fd = openSync(temp, "wx", PRIVATE_FILE_MODE);
-          writeSync(fd, built.map(event => JSON.stringify(event)).join("\n") + "\n");
-          fsyncSync(fd);
-          closeSync(fd);
-          fd = null;
-          // c2 — temp segment durable, not yet renamed.
-          await faults.segmentTempWritten?.();
-          renameSync(temp, segmentPath);
-          fsyncDirectory(evDir, platform);
-          // c3 — segment renamed (durable), ledger not yet committed.
-          await faults.segmentRenamed?.();
-        } catch (error) {
-          if (fd !== null) {
-            try {
-              closeSync(fd);
-            } catch {
-              // already closing on the failure path
-            }
-          }
-          rmSync(temp, { force: true });
-          if (error instanceof OperationConflict) throw error;
-          throw new OperationConflict("IO_FAILURE", `event segment write failed: ${summarize(error)}`);
+          (deps.warn ?? console.warn)(
+            `slp: desk lock release failed after the commit result was decided — result kept, lock left in place; repoKey ${repoKey}; lock ${lockPath}; ${summarize(releaseError, 600)}`.slice(0, 1200),
+          );
+        } catch {
+          /* reporting-channel failure is not the caller's problem */
         }
+        return result!;
       }
-      const commitPaths = repoPaths(repoKey);
-      atomicWrite(commitPaths.ledgerPath, nextBytes, commitPaths.repoDir);
-      // c4 — the commit point passed; only release and the reply remain.
-      await faults.ledgerCommitted?.();
+      const original = failure instanceof OperationConflict ? failure : null;
+      throw new OperationConflict(
+        original?.code ?? "IO_FAILURE",
+        `${summarize(failure, 600)}; additionally the desk lock release failed (repoKey ${repoKey}; lock ${lockPath}): ${summarize(releaseError, 600)}`,
+        original === null ? undefined : { path: original.path, expectedSha256: original.expectedSha256, actualSha256: original.actualSha256 },
+      );
+    }
+    if (failed) throw failure;
+    return result!;
+  }
 
-      if (decided.ok === false) return decided;
+  /** The commit protocol proper — runs only while this instance holds the
+   *  repo lock; commit() owns acquisition and release. */
+  async function commitUnderLock(
+    repoKey: string,
+    envelope: DeskStoreEnvelope,
+    decide: DecideFunction,
+    bodySha256: string,
+  ): Promise<TransactResult> {
+    // The deterministic-concurrency barrier (C1–C3): the holder pauses
+    // while owning the lockfile; other processes' acquire retries observe
+    // it exactly like a slow writer.
+    await faults.lockHeld?.();
+    const state = read(repoKey);
+    if (state.state !== "ok" && state.state !== "absent") {
+      return rejection(
+        "STATE_UNREADABLE",
+        `desk ledger is ${state.state} (${state.diagnostics.code}${state.diagnostics.schemaVersion !== null ? `, schemaVersion ${state.diagnostics.schemaVersion}` : ""})`,
+        "inspect the ledger under maintenance authority and restore or re-initialize it",
+      );
+    }
+    const ledger = state.state === "absent" ? freshLedger(envelope.repo, repoKey) : state.ledger;
+    // An older-version ledger read under this lock migrates in-memory;
+    // this commit is the first write after the bump, so it records the
+    // current schemaVersion plus the schema-migrated event (contract §2).
+    const migratedFrom =
+      state.state === "ok" && state.persistedSchemaVersion < LEDGER_SCHEMA_VERSION
+        ? state.persistedSchemaVersion
+        : null;
+    if (state.state === "ok") {
+      if (ledger.repo.hostId !== envelope.repo.hostId || ledger.repo.gitCommonDir !== envelope.repo.gitCommonDir) {
+        return invalidRecord("envelope repo does not match the ledger's repo binding", "transact against the repo the ledger is bound to");
+      }
+    }
+    // Idempotency precedes every other guard: the recorded outcome replays
+    // verbatim — a committed receipt returns its record's fields, a
+    // rejected request returns the rejection it committed.
+    const prior = ledger.requests.find(
+      record =>
+        record.actorKey === envelope.actorKey &&
+        record.assignmentId === envelope.assignmentId &&
+        record.requestId === envelope.requestId,
+    );
+    if (prior !== undefined) {
+      if (prior.bodySha256 !== bodySha256) {
+        return rejection(
+          "IDEMPOTENCY_CONFLICT",
+          `requestId ${envelope.requestId} was recorded with a different body`,
+          "resubmit under a new requestId or resend the identical body",
+        );
+      }
+      if (prior.outcome === "rejected") return prior.rejection!;
       return {
         ok: true,
-        receipt: { receiptId, revision, replayed: false, eventSeqs },
+        receipt: {
+          receiptId: prior.receiptId,
+          revision: prior.revision,
+          replayed: true,
+          eventSeqs: prior.eventSeqs,
+        },
       };
-    } finally {
-      releaseLock(repoKey);
     }
+    // Re-open and verify the complete prior chain while holding the
+    // writer lock. The read performed above is not used as a cached tip:
+    // v7 entry refinements are bound to these freshly verified events.
+    const priorEventHistory = verifyChain(repoKey, ledger);
+    if (priorEventHistory === null) {
+      return rejection("STATE_UNREADABLE", "desk event history became unverifiable before commit", "restore the complete verified event chain before retrying");
+    }
+    if (ledger.requests.length >= LEDGER_LIMITS.requests) {
+      return invalidRecord(
+        `requests table is full (${LEDGER_LIMITS.requests})`,
+        "maintenance compaction required",
+      );
+    }
+    // One pure post-state resolver owns the complete obligation graph. It
+    // sees legacy and task tables together, so rejected/ordinary commits
+    // retain the same request/byte floor and exact task/membership/scope
+    // credits are consumed only by their durable after-state facts.
+    // decide is synchronous and pure — a thenable or a throw is a caller
+    // error, recorded nowhere.
+    let outcome: unknown;
+    try {
+      const snapshot = deepFreeze(structuredClone(ledger));
+      verifiedHistory.set(snapshot, priorEventHistory);
+      outcome = decide(snapshot, envelope.command);
+    } catch (error) {
+      return invalidRecord(`decide threw: ${summarize(error)}`, "fix the decide function and resubmit");
+    }
+    if (isThenable(outcome)) {
+      return invalidRecord("decide must be synchronous — it returned a promise", "return the decision synchronously");
+    }
+    if (!isRecord(outcome) || (outcome.ok !== true && outcome.ok !== false)) {
+      return invalidRecord("decide must return {ok:true, events} or a DeskRejection", "return a valid decision shape");
+    }
+    if (outcome.ok === false) {
+      const parsed = DeskRejection.safeParse(outcome);
+      if (!parsed.success) {
+        return invalidRecord(`decide returned a malformed rejection: ${firstIssue(parsed.error)}`, "return a schema-valid DeskRejection");
+      }
+    }
+    const decided = outcome as DecideOutcome;
+    const decidedEvents = decided.ok === true ? decided.events : [];
+    if (!Array.isArray(decidedEvents)) {
+      return invalidRecord("decide must return an events array", "return {ok:true, events:[...]}");
+    }
+    // E-P2C-2 — the migration event rides the first SUCCESSFUL commit
+    // after an in-memory bump. A rejection on an older-version ledger
+    // commits into the persisted shape (no new tables, no event); the
+    // next successful commit migrates.
+    const events =
+      migratedFrom !== null && decided.ok === true
+        ? [{ kind: "schema-migrated", payload: { from: migratedFrom, to: LEDGER_SCHEMA_VERSION } }, ...decidedEvents]
+        : decidedEvents;
+    const eventsCheck = checkDecideEvents(events);
+    if ("rejection" in eventsCheck) return eventsCheck.rejection;
+
+    // §2.2 — the decide → state channels, checked after decide and before
+    // the segment write, schema-level only: each replacement table must
+    // parse strict and the candidate ledger (all channels applied) must
+    // pass the same refinements read() applies. A violation is a
+    // consumer error — INVALID_RECORD, nothing recorded (the
+    // decide-threw branch of P2-a step 5).
+    const nextTables = tableSnapshot(ledger);
+    if (decided.ok === true) {
+      const proposed: LedgerTableName[] = [];
+      for (const name of LEDGER_TABLE_NAMES) {
+        if (decided[name] === undefined) continue;
+        proposed.push(name);
+        const error = replaceTable(nextTables, name, decided[name]);
+        if (error !== null) {
+          return invalidRecord(
+            `decide returned invalid ${name}: ${firstIssue(error)}`,
+            `fix the decide function to return a schema-valid ${name} table`,
+          );
+        }
+      }
+      if (proposed.length > 0) {
+        const candidateInvalid = checkRefinements({ ...ledger, ...nextTables }, repoKey);
+        if (candidateInvalid !== null) {
+          return invalidRecord(
+            `decide returned invalid ${proposed.length === 1 ? proposed[0] : "state tables"} (refinement failed)`,
+            "fix the decide function to return tables that satisfy the ledger refinements",
+          );
+        }
+      }
+    }
+
+    const reserve = resolveDeskTaskCapacityReserve({
+      taskEntries: nextTables.taskEntries,
+      memberships: nextTables.memberships,
+      assignments: nextTables.assignments,
+      scopes: nextTables.scopes,
+      scopeTransitions: nextTables.scopeTransitions,
+    }, { eventPayloadBytes: LEDGER_LIMITS.eventPayloadBytes });
+    const assignmentSeatOverflow = nextTables.assignments.some(assignment => {
+      const seats = Array.isArray(assignment.seats) ? assignment.seats.length : 0;
+      const id = typeof assignment.assignmentId === "string" ? assignment.assignmentId : "";
+      return seats + (reserve.assignmentSeats.get(id) ?? 0) > LEDGER_LIMITS.assignmentSeats;
+    });
+    if (ledger.requests.length + 1 + reserve.requests > LEDGER_LIMITS.requests ||
+        nextTables.taskEntries.length + reserve.taskEntries > LEDGER_LIMITS.taskEntries ||
+        nextTables.memberships.length + reserve.memberships > LEDGER_LIMITS.memberships ||
+        nextTables.scopes.length + reserve.scopes > LEDGER_LIMITS.scopes ||
+        nextTables.scopeTransitions.length + reserve.scopeTransitions > LEDGER_LIMITS.scopeTransitions ||
+        assignmentSeatOverflow) {
+      return invalidRecord("commit would consume retained task stop/recovery capacity", "retain immutable history; advance an exact unresolved obligation or settle within the reserved credit budget");
+    }
+    const receiptId = uuid();
+    const revision = ledger.revision + 1;
+    const rejectionForRecord = decided.ok === false ? (decided as DeskRejectionValue) : null;
+    const stamp = now().toISOString();
+    let eventSeqs: [number, number] | null = null;
+    let lastEventSeq = ledger.lastEventSeq;
+    let lastEventSha256 = ledger.lastEventSha256;
+
+    // Build the chain in memory first: the serialized-byte check below
+    // must fire before ANY durable write, so the event segment only lands
+    // after the candidate ledger is proven to fit LEDGER_LIMITS.ledgerBytes.
+    // Seqs continue lastEventSeq, prevSha256 links to the prior event's
+    // digest (or the recorded tip).
+    const built: EventValue[] = [];
+    if (decided.ok === true && events.length > 0) {
+      let prev = ledger.lastEventSha256;
+      for (const event of events) {
+        const seq = lastEventSeq + 1;
+        const withoutDigest = {
+          seq,
+          prevSha256: prev,
+          at: stamp,
+          requestId: envelope.requestId,
+          actorKey: envelope.actorKey,
+          assignmentId: envelope.assignmentId,
+          kind: event.kind,
+          payload: event.payload,
+        };
+        const sha256 = canonicalSha256(withoutDigest);
+        built.push({ ...withoutDigest, sha256 });
+        prev = sha256;
+        lastEventSeq = seq;
+      }
+      lastEventSha256 = prev;
+      eventSeqs = [built[0]!.seq, built[built.length - 1]!.seq];
+    }
+
+    const record: RequestRecordValue = {
+      actorKey: envelope.actorKey,
+      assignmentId: envelope.assignmentId,
+      requestId: envelope.requestId,
+      bodySha256,
+      canonicalization: CANONICALIZATION,
+      receiptId,
+      revision,
+      outcome: decided.ok === true ? "committed" : "rejected",
+      eventSeqs,
+      rejection: rejectionForRecord,
+    };
+    const candidate: LedgerValue = {
+      ...ledger,
+      revision,
+      updatedAt: stamp,
+      lastEventSeq,
+      lastEventSha256,
+      requests: [...ledger.requests, record],
+      ...nextTables,
+    };
+    // The pre-commit refinement pass is the same one read() applies — a
+    // ledger that would read as unsafe/corrupt is never written.
+    const invalid = checkRefinements(candidate, repoKey, [...priorEventHistory, ...built]);
+    if (invalid !== null) {
+      throw new OperationConflict("IO_FAILURE", "refusing to commit a ledger that would not read back cleanly");
+    }
+    // E-P2C-2 — a rejection on an older-version ledger keeps the on-disk
+    // shape at that version: the migrated tables are dropped and the
+    // version literal stays at the persisted value, so the bump (with
+    // its schema-migrated event) happens on the first successful commit
+    // instead.
+    let nextBytes: string;
+    if (migratedFrom !== null && decided.ok === false) {
+      const persistedShape = persistedLedgerShape(candidate, migratedFrom);
+      const persistedParses = LEDGER_SCHEMAS[migratedFrom].safeParse(persistedShape).success;
+      if (!persistedParses) {
+        throw new OperationConflict("IO_FAILURE", "refusing to commit a ledger that would not read back cleanly");
+      }
+      nextBytes = JSON.stringify(persistedShape, null, 2) + "\n";
+    } else {
+      if (!LedgerSchema.safeParse(candidate).success) {
+        throw new OperationConflict("IO_FAILURE", "refusing to commit a ledger that would not read back cleanly");
+      }
+      nextBytes = JSON.stringify(candidate, null, 2) + "\n";
+    }
+    // The serialized-byte cap is the durable bound: read() classifies a
+    // ledger file above LEDGER_LIMITS.ledgerBytes as corrupt, so a commit
+    // that would push past it is refused BEFORE any durable write — an
+    // oversized file would silently drop every acknowledged mutation. The
+    // rejection is unrecorded (a record is itself part of the bytes).
+    // Non-recovery commits additionally hold the recovery byte slice back
+    // so a settle/recovery commit can always land.
+    const nextSize = Buffer.byteLength(nextBytes, "utf8");
+    const byteLimit = LEDGER_LIMITS.ledgerBytes - reserve.bytes;
+    if (nextSize > byteLimit) {
+      return invalidRecord(
+        nextSize > LEDGER_LIMITS.ledgerBytes
+          ? `the committed ledger would be ${nextSize} bytes — over the ${LEDGER_LIMITS.ledgerBytes}-byte cap`
+          : `the committed ledger would be ${nextSize} bytes — inside the ${reserve.bytes}-byte recovery reserve`,
+        "maintenance compaction required before more desk mutations",
+      );
+    }
+    if (eventSeqs !== null) {
+      const evDir = repoPaths(repoKey).eventsDir;
+      ensurePrivateDirectory(evDir, platform);
+      const segmentPath = join(evDir, `${eventSeqs[0]}-${eventSeqs[1]}.jsonl`);
+      const temp = `${segmentPath}.${uuid()}.tmp`;
+      let fd: number | null = null;
+      try {
+        fd = openSync(temp, "wx", PRIVATE_FILE_MODE);
+        writeSync(fd, built.map(event => JSON.stringify(event)).join("\n") + "\n");
+        fsyncSync(fd);
+        closeSync(fd);
+        fd = null;
+        // c2 — temp segment durable, not yet renamed.
+        await faults.segmentTempWritten?.();
+        renameSync(temp, segmentPath);
+        fsyncDirectory(evDir, platform);
+        // c3 — segment renamed (durable), ledger not yet committed.
+        await faults.segmentRenamed?.();
+      } catch (error) {
+        if (fd !== null) {
+          try {
+            closeSync(fd);
+          } catch {
+            // already closing on the failure path
+          }
+        }
+        rmSync(temp, { force: true });
+        if (error instanceof OperationConflict) throw error;
+        throw new OperationConflict("IO_FAILURE", `event segment write failed: ${summarize(error)}`);
+      }
+    }
+    const commitPaths = repoPaths(repoKey);
+    atomicWrite(commitPaths.ledgerPath, nextBytes, commitPaths.repoDir);
+    // c4 — the commit point passed; only release and the reply remain.
+    await faults.ledgerCommitted?.();
+
+    if (decided.ok === false) return decided;
+    return {
+      ok: true,
+      receipt: { receiptId, revision, replayed: false, eventSeqs },
+    };
   }
 
   async function transact(repoKey: string, envelope: unknown, decide: DecideFunction): Promise<TransactResult> {
