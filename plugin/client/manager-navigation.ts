@@ -5,6 +5,7 @@ export const MANAGER_SECTIONS = [
   { id: "overview", label: "Visão geral" },
   { id: "profiles", label: "Perfis" },
   { id: "pool", label: "Pool de Peers" },
+  { id: "clients", label: "Clientes" },
   { id: "jev", label: "Roteamento / Jev" },
   { id: "supervision", label: "Supervisão" },
   { id: "language", label: "Idioma" },

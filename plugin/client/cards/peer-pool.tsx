@@ -617,7 +617,9 @@ export function usePeerPoolCard({ target, targetKey, isCurrentKey, callGetPeerPo
 
 export type PeerPoolCardState = ReturnType<typeof usePeerPoolCard>;
 
-export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, availableFamilies, catalogs, catalogLoadingFor, retryCatalog, retryFeatureSet, scrollFocusNode }: {
+export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, availableFamilies, catalogs, catalogLoadingFor, retryCatalog, retryFeatureSet, scrollFocusNode, heading }: {
+  /** Replaces the card title/subtitle when the editor is mounted for a client pool. */
+  heading?: { title: string; subtitle: string };
   colors: Colors;
   target: TargetValue | null;
   compact: boolean;
@@ -631,7 +633,7 @@ export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, a
   retryFeatureSet: (key: string) => Promise<unknown>;
   scrollFocusNode: (node: unknown, focus?: boolean) => void;
 }) {
-  if (pool.poolForm.version === 2) return <PresetPoolCard colors={colors} pool={pool} availableFamilies={availableFamilies} catalogs={catalogs} retryCatalog={retryCatalog} retryFeatureSet={retryFeatureSet} />;
+  if (pool.poolForm.version === 2) return <PresetPoolCard colors={colors} pool={pool} availableFamilies={availableFamilies} catalogs={catalogs} retryCatalog={retryCatalog} retryFeatureSet={retryFeatureSet} heading={heading} />;
   const {
     poolData,
     poolForm,
@@ -694,8 +696,8 @@ export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, a
   return (
         <Card
           colors={colors}
-          title="Peer pool"
-          subtitle="User-scope Peer seats. Bound desk selection is resolved server-side, or returns options for an independent Lead choice. Supervisor and Lead use their saved profiles."
+          title={heading?.title ?? "Peer pool"}
+          subtitle={heading?.subtitle ?? "User-scope Peer seats. Bound desk selection is resolved server-side, or returns options for an independent Lead choice. Supervisor and Lead use their saved profiles."}
           // Draft-state badge beside the card title (mockup dirty-badge):
           // amber while edits are unsaved, else the saved/absent state.
           trailing={
@@ -745,7 +747,7 @@ export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, a
             </Text>
           ) : poolData.pool === null ? (
             <Text style={[styles.mutedSmall, { color: colors.foregroundMuted }]}>
-              No pool yet — add seats below, or import a legacy slp-routing.json.
+              {heading ? "No pool yet — add seats below." : "No pool yet — add seats below, or import a legacy slp-routing.json."}
             </Text>
           ) : null}
           {// Pool summary (mockup finding 7): the saved-state line plus the

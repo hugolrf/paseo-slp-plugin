@@ -505,6 +505,142 @@ rationale trail is the receipt's recorded distribution instead — see
 either scope, finish onboarding first; there is no fallback to `slp-peer`, to
 the Lead's own settings, or to another repo's catalog.
 
+### Central client map (pool and protocol per client, outside repositories)
+
+Use it when a client's repositories must not carry SLP configuration. Resolution
+order for routing/protocol: the checkout's own `.paseo-slp/` → its same-Git main
+checkout → the map → gap (a linked worktree) or the user pool (a plain,
+unmapped repository outside `protectedRoots`). The map is opened only when the
+first two have no configuration. No map file means today's behavior.
+
+Layout under the Paseo home (`$PASEO_HOME`, default `~/.paseo`; one per host —
+keep separate Mac and WSL files because `gitCommonDir` is an absolute host path):
+
+```text
+slp-clients/clients.json
+slp-clients/clients/<directory>/.paseo-slp/slp-routing.json
+slp-clients/clients/<directory>/.paseo-slp/workspace-protocol.md
+```
+
+`clients.json` is strict JSON (version 1, unknown keys rejected, ≤64KiB, no
+secrets): `protectedRoots` (absolute paths), `clients` (`name → {directory}`,
+names and directories match `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`, no `..`) and
+`repositories` (`client`, `project`, canonical `gitCommonDir` as printed by
+`realpath "$(git rev-parse --git-common-dir)"`, and `originSha256` =
+sha256 of `git remote get-url origin`, required). A ready example lives in
+`examples/central-clients/`. Check the setup (read-only, exit 1 on any defect):
+
+```bash
+node bin/slp.mjs clients validate --paseo-home "$PASEO_HOME"
+```
+
+Every file is read without following symlinks (each path component is checked)
+and the client directory must hold both files. Blocking cases: invalid or
+oversized map, the same `gitCommonDir` in two entries, a repository under
+`protectedRoots` with no entry (never the user pool), changed origin (`remote
+identity drift`), and a missing, symlinked or oversized client file. The seat
+receipt shows `routing.catalogScope = central:<client>` and the source pin's
+`central`; the seat warning names `central:<client> (map <sha8>)`. Editing
+`clients.json` or a client file between the pin and create/delivery reports
+ROUTE_DRIFT: read the routes again and repeat the request with a new requestId.
+Do not store tokens or credentials in the map or the client files.
+
+Identity rules: paths are compared by file identity (device+inode), never by
+spelling, so case differences on macOS volumes and symlinked routes resolve the
+same repository or protected root; `clients validate` still requires every
+`gitCommonDir` and `protectedRoots` entry to exist on this host in its canonical
+real-path spelling. A repeated JSON key at any depth makes the map invalid. With
+a map present, Git identity must be observable: a directory is treated as "not
+Git" only when Git ran and answered "not a git repository"; Git missing from
+`PATH`, a timeout, a `safe.directory`/ownership refusal or any other failure
+blocks (CLIENT_UNMAPPED, never the user pool). A proven non-Git directory
+outside `protectedRoots` keeps the historical path, as does everything when no
+map exists.
+
+### Clientes screen (Manager) and who can reach its writes
+
+Manager → **Clientes** edits the whole central map without touching files:
+clients and their repositories (`project`, `gitCommonDir`, `originSha256`),
+`protectedRoots`, and per client the Peer pool (the same editor as the user pool)
+and the protocol text. The host selector picks the Paseo host (Mac/WSL); each
+host has its own map and its own unsaved draft. "Add from workspace" asks the
+server to compute the canonical common-dir and the origin hash — the remote
+URL and any credential in it are never shown, only a credential-free project
+suggestion. "Who resolves this repository" runs the same `traceSourceFor` /
+`readCatalog` code as seats and `routes` and names the source (local, main
+checkout, `central:<client>`, gap, user pool, or blocked with its code).
+Validation text is the output of `clients.ts` (the same messages as
+`slp.mjs clients validate`); a save the server finds invalid is refused whatever
+the screen sent. Before saving, the screen warns that the new map hash makes every
+in-flight central seat drift (ROUTE_DRIFT) and, for pool/protocol edits, the seats
+of that client; afterwards read the routes again and repeat the request with a
+new requestId. Nothing creates or fills a map on its own: the first save, made by
+the Human on this screen, creates `slp-clients/`.
+
+Every write is a whole-file replacement that needs (1) `confirm` = sha256 of the
+exact bytes the screen showed, recomputed by the server, (2) the sha256 CAS token of
+the file as read (a conflict is refused and the draft stays on screen), (3) a line
+appended to `<home>/slp-clients/audit.log` — time, host, action, file name, hash
+before/after, never content or secrets — written before the atomic rename (an
+unwritable audit aborts the save), and (4) paths only under `slp-clients/`, new
+directories only for a validated client directory, no symlink followed. The audit
+file is outside the map hash and `clients validate`; the screen flags a map or client
+file whose current hash differs from the last hash this screen audited.
+
+**Reachability — a host CAPABILITY_GAP, not an SLP guarantee.** The Paseo daemon
+accepts `plugin.rpc.invoke` from any local process of the user, with no caller
+identity: the plugin handler receives only `{ paseo }`, and the local WebSocket
+(`ws://127.0.0.1:<port>`) needed no credential in our probe. An agent with a shell can
+therefore invoke every registered RPC, including the long-standing
+`set-peer-pool`, `set-role-routing` and `activate`; it can also edit these files
+directly, since Desk guards cover admitted tools only. `paseo plugin` and the paseo
+MCP expose no invoke (H13), and neither the Desk MCP tools nor `slp.mjs` can reach the
+client writes (proved by `tests/central-clients-ui-server.test.mjs` from the real
+registries and import graphs). `confirm`, CAS and the audit line are
+defense in depth by convention. Do not try to work around this in the host.
+
+Accepted limits of the Clientes screen (documented, not mitigated): the RPC inventory
+test is syntactic (it reads `server.handle(...)` calls), so the guarantee that no agent
+tool reaches the writes is the import graph, not the inventory; the audit `actor` is
+the constant `manager-rpc`, the log is plain text that a local process can forge, and
+rotation (512 KiB, to `audit.log.1`) drops the baseline of "changed outside this
+screen" until the next save of each file; a non-empty directory named `audit.log.1`
+blocks every save (fail-closed); `target.daemonHome` is supplied by the caller (same as
+`set-peer-pool`); and server messages (validation errors, warnings, diagnosis reasons)
+appear in English even in the Portuguese UI. Unsaved drafts live in the open Manager
+session: they survive switching clients and, within a host, switching targets, but not
+closing the screen or switching host.
+
+The project suggestion shown when adding a repository comes from the repository path of
+the remote only (never query, fragment, user, password or host), and a new client that
+reuses a folder left by a removed client is warned before saving.
+
+Visual check after installing the plugin (not exercised in this repository's tests,
+which render the card with test doubles): (1) Manager → Clientes shows "No map" and
+creates nothing; (2) add a client and a repository from "Load Paseo workspaces" — the
+common dir and origin hash appear filled, never editable; (3) "Review map change"
+lists the clients that will drift and the invalid items in red, and the confirmed
+save stays disabled until the review is valid; (4) after "Confirm and save map",
+`node bin/slp.mjs clients validate --paseo-home <home>` exits 0 and
+`slp-clients/audit.log` has one line without content; (5) open the client, edit the
+pool (first Save reviews, second Save confirms) and the protocol; (6) "Who resolves
+this folder?" on the repository and on one of its linked worktrees names
+`central:<client>`; (7) switch host (Mac/WSL): each host shows its own map and keeps
+its own unsaved draft; (8) edit a client file by hand and reload — the card shows
+"Changed outside this screen".
+
+RPCs registered in `plugin/index.server.ts` (`S` = writes state, `R` = read-only,
+`N` = explicit network action): `activate` S, `reconcile` S, `deactivate` S, `status` R,
+`local-target` R, `get-workspace-workflow` R, `start-workspace-team` S, `catalog` R,
+`set-language` S, `get-role-routing` R, `set-role-routing` S, `get-peer-pool` R,
+`set-peer-pool` S, `get-clients` R, `get-client-files` R, `validate-clients-draft` R,
+`identify-repository` R, `explain-resolution` R, **`set-clients` S, `set-client-pool` S,
+`set-client-protocol` S**, `get-jev` R, `set-jev` S, `set-jev-key` S, `test-jev` N,
+`get-supervision` R, `set-supervision` S, `get-supervision-status` R,
+`disable-supervision-notifications` S, `enforcement-status` R,
+`enforcement-recover-lock` S, `enforcement-runtime-pin` R. A test fails when an RPC is
+added without updating this inventory.
+
 ### Ordinary Peer formation through the desk
 
 Call `slp_seat_create` with requestId, role=peer, taskLabel, assignment and
@@ -678,8 +814,8 @@ Conflicting target-local catalog/protocol refuses; no local/user-pool switch or
 materialize fallback. Before create/delivery the target is freshly requalified.
 A linked Lead whose top has neither routing nor protocol inherits the configured
 main checkout verified by Git-common-dir, with source HEAD/file pins. Without a
-trustworthy configured main checkout, formation fails closed; it does not silently
-use the user pool. A top with its own configuration keeps its existing resolution
+trustworthy configured main checkout or [central client map](#central-client-map-pool-and-protocol-per-client-outside-repositories)
+entry, formation fails closed; it does not silently use the user pool. A top with its own configuration keeps its existing resolution
 (including an intentional protocol-only user pool). Source pin revalidation adds
 no phase. Legacy omitted placement without inheritance qualifies caller
 cwd/repository and active workspace without adding phases or HEAD/config leases. SDK/Git observations are not an

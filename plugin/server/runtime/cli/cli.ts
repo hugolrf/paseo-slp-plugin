@@ -43,7 +43,8 @@ import { execFileSync } from 'node:child_process';
 import { missingRuntimeMessage, MissingInstalledRuntimeError, identity, install, uninstall, update, verifyInstall, snapshot, readJson, json } from './package.ts';
 import { launchPlan, handoffPlan, launchCheck, requestSchema } from './launch.ts';
 import { roleBundle } from './role-bundle.ts';
-import { readCatalog } from './routing.ts';
+import { readCatalog, validateCatalog } from './routing.ts';
+import { validateClients } from './clients.ts';
 import { routeDecide, routeDecideSchema } from './jev-routing.ts';
 import { jevRoutingState } from './jev.ts';
 import { resolveHome } from './managed-home.ts';
@@ -73,6 +74,7 @@ const commands: Record<string, CommandSpec> = {
   uninstall: { flags: ['--apply', '--reload'], optionalTarget: true, usage: 'uninstall <dir> [--apply] [--reload]' },
   init: { flags: ['--routing-from', '--apply'], target: 'repository', usage: 'init <absolute-repo> [--routing-from <absolute-json>] [--apply]' },
   routes: { flags: ['--paseo-home', '--out'], target: 'repository', usage: 'routes <absolute-repo> [--paseo-home <absolute-home>] [--out <path>]' },
+  clients: { flags: ['--paseo-home'], target: 'validate', usage: 'clients validate [--paseo-home <absolute-home>]' },
   inventory: { flags: ['--paseo-home'], usage: 'inventory [--paseo-home <absolute-home>]' },
   agents: { flags: ['--paseo-home'], usage: 'agents [--paseo-home <absolute-home>]' },
   prepare: { flags: ['--check', '--emit', '--schema', '--out', '--live', '--paseo-home'], target: 'request.json', usage: 'prepare <request.json|-> [--check | --emit create | --schema] [--live --paseo-home <absolute-home>] [--out <path>]' },
@@ -312,6 +314,14 @@ try {
   else if (command === 'routes') {
     const home = resolveHome(options['--paseo-home']);
     result = { ...readCatalog(target!, home), jevRouting: jevRoutingState(home) };
+  }
+  else if (command === 'clients') {
+    // Read-only, deterministic: lists every defect of the central client map
+    // and of each client's pool/protocol; exit 1 when anything is wrong.
+    if (target !== 'validate') throw new Error('clients requires the validate subcommand');
+    const report = validateClients(resolveHome(options['--paseo-home']), parsed => validateCatalog(parsed));
+    result = report;
+    if (!report.ok) process.exitCode = 1;
   }
   else if (command === 'inventory') result = inventory(options['--paseo-home']);
   else if (command === 'agents') result = agents(options['--paseo-home']);

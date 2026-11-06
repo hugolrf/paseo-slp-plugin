@@ -53,6 +53,8 @@ export interface ResolvedCatalog extends Catalog {
   path: string;
   scope: string;
   sha256: string;
+  /** Present only when the pool came from the central client map. */
+  central?: { client: string; directory: string; mapSha256: string };
   tokenConflicts: ReturnType<typeof catalogTokenConflicts>;
   userPool?: UserPool | null;
   poolDrift?: PoolDrift | null;
@@ -62,6 +64,7 @@ import { readFileSync, lstatSync, realpathSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { homedir } from 'node:os';
 import { hash } from './package.ts';
+import { resolveSourceFor } from './clients.ts';
 import { families, roles, providerId } from './profiles.ts';
 import { settingIdPattern, unsafeModelPattern, rejectRouteKeys, verifyProvider,
   runtimeSettingKeys, profileRouteKeys, swe2ModelPattern } from './binding.ts';
@@ -184,6 +187,11 @@ export function catalogPoolDrift(catalog: Catalog & { sha256: string; userPool?:
   return { ...base, options };
 }
 
+// The central client map is the only provenance warning a bound seat carries:
+// it names the client and the map revision the pool was read from.
+export const centralWarnings = (catalog: { central?: { client: string; mapSha256: string } }) => catalog.central
+  ? [`routing/protocol source central:${catalog.central.client} (map ${catalog.central.mapSha256.slice(0, 8)})`] : [];
+
 // Advisory drift lines for one chosen option (or the pool file itself when it
 // cannot be compared). The repository catalog wins either way — the warnings
 // name the disagreement so callers reconcile the two Human-owned sources
@@ -204,8 +212,9 @@ export function poolDriftWarnings(drift: PoolDrift | null | undefined, optionId:
   return warnings;
 }
 
-// Resolution is skill-style: the repository catalog wins when present, otherwise
-// the plugin-owned user-scope pool <paseoHome>/slp-runtime/state/peer-pool.json
+// Resolution is skill-style: the repository catalog wins when present, then the
+// central client map (checkouts without configuration), otherwise the
+// plugin-owned user-scope pool <paseoHome>/slp-runtime/state/peer-pool.json
 // is the declared fallback. A malformed or structurally invalid repository file
 // is an authoring error, not a fallback trigger; never substitute another
 // repository's catalog. When the repository catalog wins, the live pool (if
@@ -221,14 +230,24 @@ export function readCatalog(repository: string, home = paseoHome()): ResolvedCat
   const repoPath = routingPath(repository);
   const dirStat = stat(join(repoPath, '..'));
   if (dirStat && !dirStat.isDirectory()) throw new Error('Repository .paseo-slp must be a regular directory');
-  let path = repoPath, scope = 'repository', fileStat = stat(repoPath);
-  if (dirStat == null || fileStat == null) {
-    path = join(home, 'slp-runtime', 'state', 'peer-pool.json'); scope = 'user';
-    fileStat = stat(path);
-    if (fileStat == null) throw new Error(`Missing Peer pool: no repository catalog at ${repoPath} and no user-scope pool at ${path}; author the pool in the SLP Manager surface, or run slp.mjs init <repo> --routing-from <file> --apply for a repository-scoped pool`);
+  // Central client map: consulted only when the checkout has no configuration
+  // of its own (and its main checkout has none either). A present map that is
+  // invalid, drifted or points at a missing client file throws — it never
+  // degrades to the user-scope pool.
+  const central = resolveSourceFor(repository, home)?.source ?? null;
+  let path = repoPath, scope = 'repository', fileStat = stat(repoPath), bytes: string;
+  if (central) {
+    path = join(central.repository, '.paseo-slp', 'slp-routing.json'); scope = `central:${central.client}`;
+    bytes = central.files['slp-routing.json'].text;
+  } else {
+    if (dirStat == null || fileStat == null) {
+      path = join(home, 'slp-runtime', 'state', 'peer-pool.json'); scope = 'user';
+      fileStat = stat(path);
+      if (fileStat == null) throw new Error(`Missing Peer pool: no repository catalog at ${repoPath} and no user-scope pool at ${path}; author the pool in the SLP Manager surface, or run slp.mjs init <repo> --routing-from <file> --apply for a repository-scoped pool`);
+    }
+    if (!fileStat.isFile()) throw new Error(`${scope === 'repository' ? 'Repository' : 'User-scope'} Peer pool must be a regular file`);
+    bytes = readFileSync(path, 'utf8');
   }
-  if (!fileStat.isFile()) throw new Error(`${scope === 'repository' ? 'Repository' : 'User-scope'} Peer pool must be a regular file`);
-  const bytes = readFileSync(path, 'utf8');
   const catalog = validateCatalog(JSON.parse(bytes));
   // §7.2 semantic report: an option on a reserved standard-seat id whose
   // tokens diverge from the package set is a Token conflict — reported on
@@ -238,7 +257,8 @@ export function readCatalog(repository: string, home = paseoHome()): ResolvedCat
   const tokenConflicts = catalog.version === 1 ? catalogTokenConflicts(catalog) : [];
   const sha256 = hash(bytes);
   const userPool = scope === 'repository' ? probeUserPool(home) : null;
-  const result: ResolvedCatalog = { ...catalog, path, scope, sha256, tokenConflicts };
+  const result: ResolvedCatalog = { ...catalog, path, scope, sha256, tokenConflicts,
+    ...(central ? { central: { client: central.client, directory: central.directory, mapSha256: central.mapSha256 } } : {}) };
   if (userPool) Object.assign(result, { userPool, poolDrift: catalogPoolDrift({ ...result, userPool }) });
   return result;
 }
@@ -348,7 +368,7 @@ export function catalogBinding(repository: string, role: string, providers: Prov
   // The repository catalog already won this binding — drift with the live
   // user-scope pool is reported so the two Human-owned sources get
   // reconciled instead of silently diverging.
-  const warnings = poolDriftWarnings(catalog.poolDrift, option.id);
+  const warnings = [...poolDriftWarnings(catalog.poolDrift, option.id), ...centralWarnings(catalog)];
   return {
     binding: { provider, model: option.model, modeId: option.modeId, thinkingOptionId: option.thinkingOptionId, features: structuredClone(option.features ?? {}) },
     routing: { catalogFile: catalog.path, catalogScope: catalog.scope, catalogSha256: catalog.sha256, optionId: option.id, jev, ...(route.quotaFallbackFrom ? { quotaFallbackFrom: route.quotaFallbackFrom } : {}), ...(catalog.poolDrift ? { poolDrift: catalog.poolDrift } : {}) },

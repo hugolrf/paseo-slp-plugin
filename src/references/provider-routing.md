@@ -17,23 +17,24 @@ record missing parent/report metadata as a gap.
 Compatibility/unbound hosts: prepare role/repository/workspaceId/assignment
 and optional taskLabel. prepare --live --emit create --paseo-home <verified-home>
 resolves saved profiles against fresh providers and emits arguments only.
-Use prepare --schema when unfamiliar. Preserve supplied live arrays verbatim or
+Preserve supplied live arrays verbatim or
 use inventoryFile; inline providers win. --emit create validates; --check diagnoses
-rejection, not a required second pass. Verify settings/parent/placement.
+rejection, not a second pass. Verify settings/parent/placement.
 Profile/option pins precede protocol agent_mode; unresolved mode needs Human.
 Missing profiles/unavailable providers block; configured inventory proves no live
 availability. Preparation/host create are not atomic.
 
 ## Peer pool
 
-Start with runtime/selection omitted for ordinary/Lean slp_seat_create; consume
-its result via delegation-execution.md. Runtime discovery and Jev decisions
-belong to that server operation. Full runtime pins select compatibility and
-must include required receipts. A linked caller without local routing/protocol
-inherits its configured same-Git main checkout; no trustworthy source means
-gap, not silent user fallback. Repository catalogs win even when empty;
-otherwise only Manager's user pool is fallback. Preserve routing_intent;
-report poolDrift/warnings for Human reconciliation, never auto-merge.
+Start with runtime/selection omitted for slp_seat_create; consume result via
+delegation-execution.md. Runtime discovery and Jev decisions belong to that
+server operation. Full runtime pins need required receipts. A linked caller
+without local routing/protocol inherits its configured same-Git main checkout,
+else the central client map; no trustworthy source means gap, not silent user
+fallback. Mapped repositories read only their client's pool; invalid map/client
+files block. Repository catalogs win though empty; Manager's user pool serves
+only unmapped ones. Preserve routing_intent; report poolDrift/warnings, never
+auto-merge.
 
 Armed Jev selects through a retained decision; error blocks the branch.
 Shadow requires independent Lead selection even for one option; errors block.
@@ -48,7 +49,7 @@ Catalog hash, eligibility and Jev receipts must also be fresh.
 V2: follow returned pool policy/selectionGuidance and every preset's
 description/hints. Choose smallest sufficient capability and effort; record
 uncertainty or verification difficulty justifying stronger choices.
-Task labels, brief length, names/order/origin/disposition imply no tier.
+Labels, brief length, names/order/origin/disposition imply no tier.
 Choose selection.optionId; ambiguous options need selection.thinkingOptionId (null for default).
 For cross-provider name routingRequirements.referenceAgentId; add crossProvider:true
 for an assignment-wide requirement. Runtime families differ (Devin to Codex);

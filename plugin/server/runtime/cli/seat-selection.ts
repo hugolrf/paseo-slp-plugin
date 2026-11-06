@@ -17,7 +17,7 @@ export type PeerSelectionRequest = {
 export type PeerSelectionMode = "unconfigured" | "off" | "shadow" | "armed";
 export type SelectedPeer = {
   route: { optionId: string; catalogSha256: string; decision?: unknown; thinkingOptionId?: string | null; selectionSha256?: string; routingContext?: PresetRoutingContext };
-  source: { repository: string; catalogFile: string; scope: string };
+  source: { repository: string; catalogFile: string; scope: string; central?: { client: string; directory: string; mapSha256: string } };
   mode: PeerSelectionMode; modeSha256: string;
   origin: "unique" | "lead" | "jev";
   selectionEvidence?: { policy: string; selectionGuidance: string; choice: import('./preset-routing.ts').PresetChoice };
@@ -51,7 +51,7 @@ function readInputs(request: PeerSelectionRequest) {
       : undefined);
   }
   return { catalog, usable, mode, modeSha256: hash(canonicalJson(config)),
-    source: { repository: request.repository, catalogFile: catalog.path, scope: catalog.scope } };
+    source: { repository: request.repository, catalogFile: catalog.path, scope: catalog.scope, ...(catalog.central ? { central: catalog.central } : {}) } };
 }
 function requireSameInputs(request: PeerSelectionRequest, selected: SelectedPeer) {
   const now = readInputs(request);

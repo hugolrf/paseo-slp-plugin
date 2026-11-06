@@ -321,7 +321,7 @@ function plan(root: string, request: LaunchRequest, packet: HandoffPacket | null
   };
 }
 
-export const FORMATION_CAPABILITIES = { existingPlacement: 1, peerPresets: 2 } as const;
+export const FORMATION_CAPABILITIES = { existingPlacement: 1, peerPresets: 2, centralClients: 1 } as const;
 export const launchPlan = (root: string, request: LaunchRequest, context?: import('./types.ts').TrustedLaunchContext) => plan(root, request, null, context);
 export const handoffPlan = (root: string, request: LaunchRequest) => plan(root, request, handoffPacket(request));
 

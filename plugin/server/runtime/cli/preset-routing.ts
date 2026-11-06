@@ -1,5 +1,6 @@
 // v2 routing is isolated from the retained v1 token/archetype contract.
 import type { Catalog, CatalogOption, ResolvedCatalog } from './routing.ts';
+import { centralWarnings } from './routing.ts';
 import type { Provider, Route } from './types.ts';
 import type { PresetFields } from '../../../shared/runtime/peer-presets.ts';
 import { PRESET_ROUTING_VERSION, PRESET_SELECTION_GUIDANCE, isAutomaticEffort } from '../../../shared/runtime/peer-presets.ts';
@@ -140,5 +141,5 @@ export function bindPresetCatalog(catalog: ResolvedCatalog, role: string, provid
     routing: { catalogFile: catalog.path, catalogScope: catalog.scope, catalogSha256: catalog.sha256, optionId: option.id,
       thinkingOptionId: choice.thinkingOptionId, selectionSha256: set.selectionSha256, routingContext: set.context,
       jev: { required: armed, decision: receipt ? 'verified' : 'none', ...(receipt ? { jevChoice, declined: jevChoice === 'no-suitable-option' } : {}) },
-      ...(route.quotaFallbackFrom ? { quotaFallbackFrom: route.quotaFallbackFrom } : {}) }, warnings: [] as string[] };
+      ...(route.quotaFallbackFrom ? { quotaFallbackFrom: route.quotaFallbackFrom } : {}) }, warnings: centralWarnings(catalog) };
 }

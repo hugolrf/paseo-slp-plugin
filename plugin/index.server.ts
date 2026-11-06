@@ -6,7 +6,7 @@ import { deliveryTimelineItem } from "./server/delivered-input.ts";
 import type { PluginServerContribution } from "@getpaseo/plugin/server";
 import { realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { activate, reconcile, deactivate, status, localTarget, catalog, setLanguage, getRoleRouting, setRoleRouting, getPeerPool, setPeerPool, getJev, setJev, setJevKey, testJev } from "./shared/contracts.ts";
+import { activate, reconcile, deactivate, status, localTarget, catalog, setLanguage, getRoleRouting, setRoleRouting, getPeerPool, setPeerPool, getClients, getClientFiles, validateClientsDraft, identifyRepository, explainResolution, setClients, setClientPool, setClientProtocol, getJev, setJev, setJevKey, testJev } from "./shared/contracts.ts";
 import { disableSupervisionNotifications, getSupervision, getSupervisionStatus, setSupervision } from "./shared/supervision.ts";
 import { enforcementStatus, enforcementRecoverLock, enforcementRuntimePin } from "./shared/enforcement.ts";
 import type { Manager } from "./shared/contracts.ts";
@@ -14,6 +14,7 @@ import { loadCatalog } from "./server/provider-catalog.ts";
 import { createManager } from "./server/manager.ts";
 import { createJev } from "./server/jev.ts";
 import { createStateStore } from "./server/state-store.ts";
+import { createClientsStore } from "./server/clients-store.ts";
 import { createSupervisionState } from "./server/supervision/state.ts";
 import { createSupervisionObserver, type SupervisionObserver } from "./server/supervision/observer.ts";
 import { detectDaemonHome, resolveDaemonHome } from "./server/daemon-home.ts";
@@ -78,6 +79,20 @@ export default function contribute(server: Parameters<PluginServerContribution>[
   server.handle(setRoleRouting, input => store.setRoleRouting(input));
   server.handle(getPeerPool, input => store.getPeerPool(input));
   server.handle(setPeerPool, input => store.setPeerPool(input));
+  // Central client map ("Clientes" screen). Reads/validation/diagnosis, then the
+  // three writes (map, client pool, client protocol): plugin-only RPCs with CAS,
+  // a `confirm` token and an audit line. Like every RPC here they are reachable
+  // by any local process through the daemon's plugin.rpc.invoke (host gap); no
+  // Desk tool or slp.mjs command exposes them (tests prove the import graph).
+  const clients = createClientsStore();
+  server.handle(getClients, input => clients.getClients(input));
+  server.handle(getClientFiles, input => clients.getClientFiles(input));
+  server.handle(validateClientsDraft, input => clients.validateClientsDraft(input));
+  server.handle(identifyRepository, input => clients.identifyRepository(input));
+  server.handle(explainResolution, input => clients.explainResolution(input));
+  server.handle(setClients, input => clients.setClients(input));
+  server.handle(setClientPool, input => clients.setClientPool(input));
+  server.handle(setClientProtocol, input => clients.setClientProtocol(input));
   // Jev (OpenRouter Decisions) — per-daemon config/key under slp-runtime/state;
   // test-jev is the only handler that touches the network (explicit action).
   const jev = createJev();

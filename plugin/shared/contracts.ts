@@ -372,6 +372,107 @@ export const SetPeerPoolOutput = z.object({
   /** sha256 of the written file — the next expectedSha256 token. */
   sha256: Sha,
 }).strict();
+// ---------------------------------------------------------------------------
+// Central client map (screen "Clientes"). The strict map/pool/path rules live
+// in plugin/server/runtime/cli/clients.ts; these envelopes only carry data.
+// Writes (set-clients / set-client-pool / set-client-protocol) are plugin-only
+// RPCs with sha256 CAS plus a `confirm` token (sha256 of the exact bytes the
+// screen showed the Human). The token and the audit line are defense in depth
+// by convention — the daemon cannot tell the Manager screen from another local
+// process (host CAPABILITY_GAP; see docs/operations.md).
+// ---------------------------------------------------------------------------
+export const ClientsMapDraft = z.object({
+  version: z.number(),
+  protectedRoots: z.array(z.string().max(4096)).max(256),
+  clients: z.record(z.string().max(256), z.object({ directory: z.string().max(256) }).passthrough()),
+  repositories: z.array(z.object({
+    client: z.string().max(256), project: z.string().max(512),
+    gitCommonDir: z.string().max(4096), originSha256: z.string().max(128),
+  }).passthrough()).max(4096),
+}).passthrough();
+const ClientRef = z.string().min(1).max(256);
+export const GetClientsInput = z.object({ schemaVersion: z.literal(1), target: Target }).strict();
+export const ClientRow = z.object({
+  name: z.string(), directory: z.string(), referenced: z.boolean(), repositories: z.number().int(),
+  routingSha256: Sha.nullable(), protocolSha256: Sha.nullable(), options: z.number().int().nullable(),
+  error: z.string().nullable(),
+  /** true when the file's current hash differs from the last hash this screen wrote (audit log). */
+  externalChange: z.boolean(),
+}).strict();
+export const GetClientsOutput = z.object({
+  schemaVersion: z.literal(1),
+  canonicalHome: z.string(),
+  mapState: z.enum(["absent", "valid", "invalid"]),
+  mapSha256: Sha.nullable(),
+  map: ClientsMapDraft.nullable(),
+  mapError: z.string().nullable(),
+  hostErrors: z.array(z.string()),
+  mapExternalChange: z.boolean(),
+  clients: z.array(ClientRow),
+}).strict();
+export const GetClientFilesInput = z.object({ schemaVersion: z.literal(1), target: Target, client: ClientRef }).strict();
+export const GetClientFilesOutput = z.object({
+  schemaVersion: z.literal(1), client: z.string(), directory: z.string(),
+  pool: z.object({ pool: PeerPool.nullable(), sha256: Sha.nullable(), error: z.string().nullable() }).strict(),
+  protocol: z.object({ text: z.string().nullable(), sha256: Sha.nullable(), error: z.string().nullable() }).strict(),
+}).strict();
+export const ValidateClientsDraftInput = z.object({
+  schemaVersion: z.literal(1), target: Target,
+  draft: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("map"), map: ClientsMapDraft }).strict(),
+    z.object({ kind: z.literal("pool"), client: ClientRef, pool: PeerPool }).strict(),
+    z.object({ kind: z.literal("protocol"), client: ClientRef, text: z.string().max(256 * 1024) }).strict(),
+  ]),
+}).strict();
+export const ValidateClientsDraftOutput = z.object({
+  schemaVersion: z.literal(1),
+  ok: z.boolean(),
+  /** Blocking: the server refuses to save while any remain (same text as `clients validate`). */
+  errors: z.array(z.string()),
+  /** Non-blocking: e.g. a client without pool/protocol blocks its repositories until the files exist. */
+  warnings: z.array(z.string()),
+  /** sha256 of the exact bytes a save would write; null while errors remain. The save must echo it. */
+  confirm: Sha.nullable(),
+  /** Clients whose in-flight central seats drift (ROUTE_DRIFT) if this draft is saved. */
+  affectedClients: z.array(z.string()),
+  /** True when the map hash changes: every in-flight central seat of EVERY client then drifts. */
+  mapHashChanges: z.boolean(),
+}).strict();
+export const IdentifyRepositoryInput = z.object({ schemaVersion: z.literal(1), target: Target, path: AbsolutePath }).strict();
+export const IdentifyRepositoryOutput = z.object({
+  schemaVersion: z.literal(1),
+  gitCommonDir: z.string(), originSha256: Sha, projectSuggestion: z.string(),
+  linked: z.boolean(), mappedClient: z.string().nullable(),
+}).strict();
+export const ExplainResolutionInput = z.object({ schemaVersion: z.literal(1), target: Target, path: AbsolutePath }).strict();
+export const ExplainResolutionOutput = z.object({
+  schemaVersion: z.literal(1),
+  path: z.string(),
+  decidedBy: z.enum(["client-directory", "local", "main", "central", "none", "blocked"]),
+  /** What `readCatalog`/routes read: repository | user | central:<client>; null when it throws. */
+  catalogScope: z.string().nullable(),
+  catalogPath: z.string().nullable(),
+  /** What seat formation does with the same checkout. */
+  formation: z.enum(["local", "main", "central", "user-pool", "gap", "blocked"]),
+  client: z.string().nullable(),
+  code: z.string().nullable(),
+  reason: z.string(),
+}).strict();
+export const SetClientsInput = z.object({
+  schemaVersion: z.literal(1), target: Target, map: ClientsMapDraft,
+  expectedSha256: Sha.nullable(), confirm: Sha,
+}).strict();
+export const SetClientsOutput = z.object({ schemaVersion: z.literal(1), sha256: Sha, map: ClientsMapDraft }).strict();
+export const SetClientPoolInput = z.object({
+  schemaVersion: z.literal(1), target: Target, client: ClientRef, pool: PeerPool,
+  expectedSha256: Sha.nullable(), confirm: Sha,
+}).strict();
+export const SetClientPoolOutput = z.object({ schemaVersion: z.literal(1), sha256: Sha }).strict();
+export const SetClientProtocolInput = z.object({
+  schemaVersion: z.literal(1), target: Target, client: ClientRef, text: z.string().max(256 * 1024),
+  expectedSha256: Sha.nullable(), confirm: Sha,
+}).strict();
+export const SetClientProtocolOutput = z.object({ schemaVersion: z.literal(1), sha256: Sha }).strict();
 /** Jev provider block stored at slp-runtime/state/jev.json — two kinds.
  *  openrouter: model must be a pinned `<owner>/jev-<version>` id; aliases
  *  (~typesafe/jev-latest, jev-latest, jev-preview) drift and are rejected.
@@ -588,6 +689,14 @@ export const getRoleRouting = defineRpc({ name: "get-role-routing", input: GetRo
 export const setRoleRouting = defineRpc({ name: "set-role-routing", input: SetRoleRoutingInput, output: SetRoleRoutingOutput });
 export const getPeerPool = defineRpc({ name: "get-peer-pool", input: GetPeerPoolInput, output: GetPeerPoolOutput });
 export const setPeerPool = defineRpc({ name: "set-peer-pool", input: SetPeerPoolInput, output: SetPeerPoolOutput });
+export const getClients = defineRpc({ name: "get-clients", input: GetClientsInput, output: GetClientsOutput });
+export const getClientFiles = defineRpc({ name: "get-client-files", input: GetClientFilesInput, output: GetClientFilesOutput });
+export const validateClientsDraft = defineRpc({ name: "validate-clients-draft", input: ValidateClientsDraftInput, output: ValidateClientsDraftOutput });
+export const identifyRepository = defineRpc({ name: "identify-repository", input: IdentifyRepositoryInput, output: IdentifyRepositoryOutput });
+export const explainResolution = defineRpc({ name: "explain-resolution", input: ExplainResolutionInput, output: ExplainResolutionOutput });
+export const setClients = defineRpc({ name: "set-clients", input: SetClientsInput, output: SetClientsOutput });
+export const setClientPool = defineRpc({ name: "set-client-pool", input: SetClientPoolInput, output: SetClientPoolOutput });
+export const setClientProtocol = defineRpc({ name: "set-client-protocol", input: SetClientProtocolInput, output: SetClientProtocolOutput });
 export const getJev = defineRpc({ name: "get-jev", input: GetJevInput, output: GetJevOutput });
 export const setJev = defineRpc({ name: "set-jev", input: SetJevInput, output: SetJevOutput });
 export const setJevKey = defineRpc({ name: "set-jev-key", input: SetJevKeyInput, output: SetJevKeyOutput });
@@ -827,6 +936,17 @@ export type GetPeerPoolRequest = z.infer<typeof GetPeerPoolInput>;
 export type GetPeerPoolResult = z.infer<typeof GetPeerPoolOutput>;
 export type SetPeerPoolRequest = z.infer<typeof SetPeerPoolInput>;
 export type SetPeerPoolResult = z.infer<typeof SetPeerPoolOutput>;
+export type ClientsMapDraftValue = z.infer<typeof ClientsMapDraft>;
+export type GetClientsResult = z.infer<typeof GetClientsOutput>;
+export type GetClientFilesResult = z.infer<typeof GetClientFilesOutput>;
+export type ValidateClientsDraftRequest = z.infer<typeof ValidateClientsDraftInput>;
+export type ValidateClientsDraftResult = z.infer<typeof ValidateClientsDraftOutput>;
+export type IdentifyRepositoryResult = z.infer<typeof IdentifyRepositoryOutput>;
+export type ExplainResolutionResult = z.infer<typeof ExplainResolutionOutput>;
+export type SetClientsRequest = z.infer<typeof SetClientsInput>;
+export type SetClientsResult = z.infer<typeof SetClientsOutput>;
+export type SetClientPoolRequest = z.infer<typeof SetClientPoolInput>;
+export type SetClientProtocolRequest = z.infer<typeof SetClientProtocolInput>;
 export type JevProviderValue = z.infer<typeof JevProvider>;
 export type JevConfigValue = z.infer<typeof JevConfig>;
 export type JevViewValue = z.infer<typeof JevView>;

@@ -16,7 +16,7 @@ read-only and does not verify or select a runtime for execution.
 | `prepare --schema`, `prepare-handoff --schema` | No | Yes |
 | `monitor`, `record-build` (including `--schema`) | No | Yes |
 | `identity`, `snapshot`, `review-packet`, `records`, `verify-handback` | No | Yes |
-| `routes`, `route-decide` (including `--schema`), `inventory`, `agents`, `notebook`, `status`, `local-target` | No | Yes; relevant daemon files/configuration are still needed |
+| `routes`, `clients validate`, `route-decide` (including `--schema`), `inventory`, `agents`, `notebook`, `status`, `local-target` | No | Yes; relevant daemon files/configuration are still needed |
 | `instructions` | No for a source preview | Yes; a managed render needs its binding environment |
 | `init`, `materialize`, `install` | No | Yes |
 | `upgrade`, `uninstall`, `verify` | No for the invoking CLI | Yes; the previous/target directory must be installed |
@@ -650,6 +650,18 @@ require restart or a manual reload, reflected in the result and exit 1.
 `installed.json` and checks the optional binding-file hash. It prints the
 manifest on success and exits 1 for a missing receipt, incomplete payload or
 drift. It does not establish provider health or E2E acceptance.
+
+## `clients validate`
+
+`clients validate [--paseo-home <absolute-home>]` reads
+`<home>/slp-clients/clients.json` and every client directory it names, without
+writing. It prints one deterministic JSON report (`ok`, `mapSha256`, sorted
+`clients` with file hashes and option counts, `repositories`, `errors`) and exits
+1 when the map is absent, invalid (including repeated keys), a `gitCommonDir` or
+protected root does not exist on this host or is not in canonical real-path form,
+two entries name one common-dir, or any client pool/protocol is missing,
+symlinked, oversized or fails Peer-pool validation. See
+[the central client map](operations.md#central-client-map-pool-and-protocol-per-client-outside-repositories).
 
 ## `desk-recover`
 
