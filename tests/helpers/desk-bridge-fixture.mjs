@@ -94,7 +94,8 @@ export function bridgeFixture(t, homePrefix, pin, over = {}) {
     platform: over.platform,
     now: over.now,
     uuid: over.uuid,
-    warn: line => warnings.push(line),
+    faults: over.faults,
+    warn: over.warn ?? (line => warnings.push(line)),
   };
   const bridge = createDeskBridge(deps);
   return {

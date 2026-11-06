@@ -1,7 +1,7 @@
 // The desk store, bridge and operator recovery read the same lock record.
 // This module interprets the bytes and syscall result; each caller still
 // owns waiting, re-entry, release and the authority to recover a lock.
-import { readFileSync } from "node:fs";
+import { fstatSync, lstatSync, readFileSync, unlinkSync } from "node:fs";
 import { DESK_RECOVERY_LIMITS } from "../../shared/runtime/desk-contract.ts";
 
 export interface LockHolder {
@@ -28,6 +28,99 @@ export function parseLockHolder(bytes: Buffer | string): LockHolder | null {
   } catch {
     return null;
   }
+}
+
+/** How a lock holder relates to the instance reading the lock. `pid` alone
+ *  cannot tell a holder in ANOTHER process from a previous or parallel
+ *  instance in THIS process: both answer kill(pid, 0) alive, but only the
+ *  latter can be a leftover of a plugin instance the host already replaced.
+ *  The nonce is per-instance, so same pid + different nonce is the second
+ *  case. Neither case authorises removal — this only names the situation. */
+export type LockHolderRelation = "self" | "same-process-other-instance" | "other-process";
+
+export function relateLockHolder(
+  holder: Pick<LockHolder, "pid" | "instanceNonce">,
+  self: { pid: number; instanceNonce: string },
+): LockHolderRelation {
+  if (holder.pid !== self.pid) return "other-process";
+  return holder.instanceNonce === self.instanceNonce ? "self" : "same-process-other-instance";
+}
+
+/** Age since the holder's recorded `startedAt`, or an explicit "unknown" —
+ *  never a guess (a missing, unparseable or future timestamp is doubt). */
+export function formatLockAge(startedAt: string | undefined, nowMs: number): string {
+  const startedMs = startedAt === undefined ? Number.NaN : Date.parse(startedAt);
+  if (!Number.isFinite(startedMs)) return "unknown (no usable startedAt)";
+  const seconds = Math.floor((nowMs - startedMs) / 1000);
+  if (seconds < 0) return "unknown (startedAt is in the future)";
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  if (days > 0) return `${days}d ${hours % 24}h`;
+  if (hours > 0) return `${hours}h ${minutes % 60}m`;
+  if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+  return `${seconds}s`;
+}
+
+/** One-line holder facts shared by every lock diagnostic: who, since when,
+ *  and exactly which file and namespace. */
+export function describeLockHolder(input: {
+  repoKey: string;
+  lockPath: string;
+  holder: Pick<LockHolder, "pid" | "instanceNonce" | "startedAt">;
+  nowMs: number;
+}): string {
+  const { holder } = input;
+  return (
+    `pid ${holder.pid}, nonce ${holder.instanceNonce}, age ${formatLockAge(holder.startedAt, input.nowMs)}` +
+    `${holder.startedAt !== undefined ? ` (startedAt ${holder.startedAt})` : ""}; ` +
+    `repoKey ${input.repoKey}; lock ${input.lockPath}`
+  );
+}
+
+/** Identity of the lock file a call just created with O_EXCL (`wx`). */
+export interface CreatedLockFile { dev: number; ino: number }
+
+export function createdLockFile(fd: number): CreatedLockFile | null {
+  try {
+    const stat = fstatSync(fd);
+    return { dev: stat.dev, ino: stat.ino };
+  } catch {
+    return null;
+  }
+}
+
+export type CreatedLockCleanup = "removed" | "absent" | "left";
+
+/** Self-cleanup of a lock file THIS call created when writing its holder
+ *  record failed. Fail-closed: the path is unlinked only while it is still
+ *  the very file this call created (same dev + ino, regular file). The caller
+ *  MUST run this while the creating fd is still open — an open fd keeps the
+ *  inode allocated, so the dev+ino comparison cannot be fooled by inode
+ *  reuse. Anything unverifiable (identity unknown, replaced, not a regular
+ *  file, unlink failed) is `left` and must be diagnosed by the caller; a path
+ *  that is simply gone is `absent`. A lstat→unlink race with a foreign
+ *  replacement is not closed (no unlink-by-inode exists). */
+export function removeCreatedLockFile(path: string, created: CreatedLockFile | null): CreatedLockCleanup {
+  if (created === null) return "left";
+  try {
+    const stat = lstatSync(path);
+    if (!stat.isFile() || stat.dev !== created.dev || stat.ino !== created.ino) return "left";
+    unlinkSync(path);
+    return "removed";
+  } catch (error) {
+    return (error as NodeJS.ErrnoException | null)?.code === "ENOENT" ? "absent" : "left";
+  }
+}
+
+/** Diagnostic suffix when the failed acquire could not remove its own file. */
+export function leftLockNote(cleanup: CreatedLockCleanup, lockPath: string): string {
+  return cleanup === "left" ? `; lock file left in place at ${lockPath} (could not confirm it is the file this call created)` : "";
+}
+
+/** Same facts for a lock whose holder record cannot be read or parsed. */
+export function describeLockPath(input: { repoKey: string; lockPath: string }): string {
+  return `repoKey ${input.repoKey}; lock ${input.lockPath}`;
 }
 
 export type LockHolderProcess = "alive" | "esrch" | "eperm" | "undetermined";
