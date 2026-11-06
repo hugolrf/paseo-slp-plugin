@@ -26,3 +26,16 @@ test('corporate policy follows git-common-dir into a PR worktree outside protect
   assert.match(text,/DWLaw \/ DWLaw\/api/);
   assert.match(text,/Regra DWLaw de PR/);
 });
+
+test('client container folder (non-git) binds its single company; unrelated protected folder stays unverified',t=>{
+  const root=mkdtempSync(join(tmpdir(),'slp-company-container-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
+  const protectedRoot=join(root,'Projetos','Fourtime');const container=join(protectedRoot,'DWLaw');const other=join(protectedRoot,'Outra');
+  mkdirSync(container,{recursive:true});mkdirSync(other,{recursive:true});
+  const common=join(realpathSync(container),'api','.git');
+  const registry=join(root,'companies.json');
+  writeFileSync(registry,JSON.stringify({version:1,protectedRoots:[protectedRoot],
+    companies:{DWLaw:{instructions:'Regra DWLaw.',sourceNotes:['Projetos/DWLaw/_mapa.md']}},
+    projects:[{company:'DWLaw',project:'DWLaw/api',gitCommonDir:common,originSha256:sha('x')}]}));
+  assert.match(companyContextForCwd(container,registry),/DWLaw \/ \(pasta do cliente\)/);
+  assert.throws(()=>companyContextForCwd(other,registry),/unverified/);
+});

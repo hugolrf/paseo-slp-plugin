@@ -51,7 +51,16 @@ export function companyContextForCwd(cwd: string | undefined,
     commonDir = canonical(resolve(location, git(location, "rev-parse", "--git-common-dir")));
     remoteSha = sha(git(location, "remote", "get-url", "origin"));
   } catch {
-    if (roots.some(root => belongs(root, location))) throw new Error("Equipes: corporate Git identity is unverified");
+    if (roots.some(root => belongs(root, location))) {
+      // A client container folder (not a repository) that holds registered
+      // projects of exactly one company is legitimate for a Supervisor/Geral
+      // workspace: bind that company, never guess across companies.
+      const prefix = location.endsWith("/") ? location : location + "/";
+      const under = registry.projects.filter(item => item.gitCommonDir.startsWith(prefix));
+      const owners = new Set(under.map(item => item.company));
+      if (owners.size !== 1) throw new Error("Equipes: corporate Git identity is unverified");
+      return render(under[0].company, "(pasta do cliente)", registry.companies[under[0].company]);
+    }
     return null;
   }
   // Paseo PR workspaces live under ~/.paseo/worktrees. Bind the company by
@@ -62,7 +71,9 @@ export function companyContextForCwd(cwd: string | undefined,
   if (matches.length !== 1) throw new Error("Equipes: corporate repository is not uniquely registered");
   const project = matches[0];
   if (project.originSha256 !== remoteSha) throw new Error("Equipes: corporate remote identity drift");
-  const policy = registry.companies[project.company];
+  return render(project.company, project.project, registry.companies[project.company]);
+}
+function render(company: string, projectName: string, policy: Policy | undefined): string {
   if (!policy || typeof policy.instructions !== "string" ||
     !policy.instructions.trim() || policy.instructions.length > 2200 ||
     !Array.isArray(policy.sourceNotes) ||
@@ -70,7 +81,7 @@ export function companyContextForCwd(cwd: string | undefined,
     throw new Error("Equipes: company policy is missing or invalid");
   }
   return [
-    "\n## Contexto empresarial obrigatório: " + project.company + " / " + project.project,
+    "\n## Contexto empresarial obrigatório: " + company + " / " + projectName,
     "Vínculo verificado pelo Git common-dir e hash da origem; nunca herdar políticas, cota, fallback ou credenciais de outra empresa.",
     "As notas são fontes de contexto a verificar; não substituem reserva exclusiva da tarefa nem autorizações de ações externas.",
     policy.instructions.trim(),
