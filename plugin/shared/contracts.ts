@@ -372,6 +372,163 @@ export const SetPeerPoolOutput = z.object({
   /** sha256 of the written file — the next expectedSha256 token. */
   sha256: Sha,
 }).strict();
+// ---------------------------------------------------------------------------
+// Central client map (screen "Clientes"). The strict map/pool/path rules live
+// in plugin/server/runtime/cli/clients.ts; these envelopes only carry data.
+// Writes (set-clients / set-client-pool / set-client-protocol) are plugin-only
+// RPCs with sha256 CAS plus a `confirm` token (sha256 of the exact bytes the
+// screen showed the Human). The token and the audit line are defense in depth
+// by convention — the daemon cannot tell the Manager screen from another local
+// process (host CAPABILITY_GAP; see docs/operations.md).
+// ---------------------------------------------------------------------------
+// Structured rules (map version 2). The server's parseClientMap is the judge of
+// shape and bounds; these types only let the screen build a draft.
+export const ClientRulesDraft = z.object({
+  commitIdentity: z.object({ name: z.string().max(200), email: z.string().max(300) }).passthrough().nullable().optional(),
+  titleFormat: z.string().max(64).nullable().optional(),
+  aiFooter: z.string().max(16).nullable().optional(),
+  origin: z.object({ kind: z.string().max(16) }).passthrough().nullable().optional(),
+}).passthrough();
+export const ClientsMapDraft = z.object({
+  version: z.number(),
+  /** Version 2 only. `true`: a project without a client entry blocks seat formation and agent.create. */
+  strict: z.boolean().optional(),
+  protectedRoots: z.array(z.string().max(4096)).max(256),
+  rules: ClientRulesDraft.optional(),
+  clients: z.record(z.string().max(256), z.object({ directory: z.string().max(256), rules: ClientRulesDraft.optional() }).passthrough()),
+  repositories: z.array(z.object({
+    client: z.string().max(256), project: z.string().max(512),
+    /** `null` (version 2): a local-only repository, which must have zero remotes. */
+    gitCommonDir: z.string().max(4096), originSha256: z.string().max(128).nullable(),
+  }).passthrough()).max(4096),
+}).passthrough();
+const GitIdentity = z.object({ name: z.string().nullable(), email: z.string().nullable() }).strict();
+/** Read-only comparison of a checkout's Git identity with the rule of its own client. */
+export const IdentityCheck = z.object({
+  state: z.enum(["ok", "differs", "unconfigured", "unknown"]),
+  expected: z.object({ name: z.string(), email: z.string() }).strict(),
+  effective: GitIdentity, local: GitIdentity,
+}).strict();
+const ClientRef = z.string().min(1).max(256);
+export const GetClientsInput = z.object({ schemaVersion: z.literal(1), target: Target }).strict();
+export const ClientRow = z.object({
+  name: z.string(), directory: z.string(), referenced: z.boolean(), repositories: z.number().int(),
+  routingSha256: Sha.nullable(), protocolSha256: Sha.nullable(), options: z.number().int().nullable(),
+  error: z.string().nullable(),
+  /** The rendered block this client's agents receive (global ← client rules); null when no rule applies. */
+  rulesText: z.string().nullable(),
+  rulesSha256: Sha.nullable(),
+  /** true when the file's current hash differs from the last hash this screen wrote (audit log). */
+  externalChange: z.boolean(),
+}).strict();
+export const GetClientsOutput = z.object({
+  schemaVersion: z.literal(1),
+  canonicalHome: z.string(),
+  mapState: z.enum(["absent", "valid", "invalid"]),
+  mapSha256: Sha.nullable(),
+  map: ClientsMapDraft.nullable(),
+  /** From the saved map; `false` for version 1 and for no map. */
+  strict: z.boolean(),
+  mapError: z.string().nullable(),
+  hostErrors: z.array(z.string()),
+  mapExternalChange: z.boolean(),
+  clients: z.array(ClientRow),
+}).strict();
+export const GetClientFilesInput = z.object({ schemaVersion: z.literal(1), target: Target, client: ClientRef }).strict();
+export const GetClientFilesOutput = z.object({
+  schemaVersion: z.literal(1), client: z.string(), directory: z.string(),
+  pool: z.object({ pool: PeerPool.nullable(), sha256: Sha.nullable(), error: z.string().nullable() }).strict(),
+  protocol: z.object({ text: z.string().nullable(), sha256: Sha.nullable(), error: z.string().nullable() }).strict(),
+}).strict();
+export const ValidateClientsDraftInput = z.object({
+  schemaVersion: z.literal(1), target: Target,
+  draft: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("map"), map: ClientsMapDraft }).strict(),
+    z.object({ kind: z.literal("pool"), client: ClientRef, pool: PeerPool }).strict(),
+    z.object({ kind: z.literal("protocol"), client: ClientRef, text: z.string().max(256 * 1024) }).strict(),
+  ]),
+}).strict();
+export const ValidateClientsDraftOutput = z.object({
+  schemaVersion: z.literal(1),
+  ok: z.boolean(),
+  /** Blocking: the server refuses to save while any remain (same text as `clients validate`). */
+  errors: z.array(z.string()),
+  /** Non-blocking: e.g. a client without pool/protocol blocks its repositories until the files exist. */
+  warnings: z.array(z.string()),
+  /** sha256 of the exact bytes a save would write; null while errors remain. The save must echo it. */
+  confirm: Sha.nullable(),
+  /** Clients whose in-flight central seats drift (ROUTE_DRIFT) if this draft is saved. */
+  affectedClients: z.array(z.string()),
+  /** True when the map hash changes: every in-flight central seat of EVERY client then drifts. */
+  mapHashChanges: z.boolean(),
+}).strict();
+export const IdentifyRepositoryInput = z.object({ schemaVersion: z.literal(1), target: Target, path: AbsolutePath }).strict();
+export const IdentifyRepositoryOutput = z.object({
+  schemaVersion: z.literal(1),
+  /** `originSha256: null` + `localOnly: true`: the checkout has no remote (version 2 map only). */
+  gitCommonDir: z.string(), originSha256: Sha.nullable(), localOnly: z.boolean(), projectSuggestion: z.string(),
+  linked: z.boolean(), mappedClient: z.string().nullable(),
+}).strict();
+export const ExplainResolutionInput = z.object({ schemaVersion: z.literal(1), target: Target, path: AbsolutePath }).strict();
+export const ExplainResolutionOutput = z.object({
+  schemaVersion: z.literal(1),
+  path: z.string(),
+  decidedBy: z.enum(["client-directory", "local", "main", "central", "none", "blocked"]),
+  /** What `readCatalog`/routes read: repository | user | central:<client>; null when it throws. */
+  catalogScope: z.string().nullable(),
+  catalogPath: z.string().nullable(),
+  /** What seat formation does with the same checkout. */
+  formation: z.enum(["local", "main", "central", "user-pool", "gap", "blocked"]),
+  client: z.string().nullable(),
+  code: z.string().nullable(),
+  reason: z.string(),
+  /** Map facts about the checkout's binding; null when the map does not bind it. */
+  strict: z.boolean().nullable(),
+  localOnly: z.boolean().nullable(),
+  rulesSha256: Sha.nullable(),
+  identity: IdentityCheck.nullable(),
+}).strict();
+// Every project the Paseo host knows, with its client binding (list + batch bind
+// on the screen). The host list is data from the screen; identity, binding and
+// "pending" are always computed by the server from the paths. Worktrees of one
+// repository collapse into one row (keyed by Git common-dir).
+export const ClientProjectWorkspace = z.object({ id: z.string().max(256), name: z.string().max(512), path: AbsolutePath }).strict();
+export const ListClientProjectsInput = z.object({
+  schemaVersion: z.literal(1), target: Target, workspaces: z.array(ClientProjectWorkspace).max(1024),
+}).strict();
+export const ClientProjectRow = z.object({
+  /** Git common-dir, or `path:<directory>` for a directory that is not a Git checkout. */
+  key: z.string(),
+  /** bound: an entry names a client; pending: no entry (blocked under a strict map); blocked: the map refuses it; not-git: no Git identity to map. */
+  state: z.enum(["bound", "pending", "blocked", "not-git"]),
+  name: z.string(), workspaceIds: z.array(z.string()), paths: z.array(z.string()),
+  gitCommonDir: z.string().nullable(), originSha256: Sha.nullable(), localOnly: z.boolean(),
+  projectSuggestion: z.string(), linked: z.boolean(),
+  client: z.string().nullable(), code: z.string().nullable(), reason: z.string().nullable(),
+  identity: IdentityCheck.nullable(),
+}).strict();
+export const ListClientProjectsOutput = z.object({
+  schemaVersion: z.literal(1),
+  mapState: z.enum(["absent", "valid", "invalid"]),
+  strict: z.boolean(),
+  pending: z.number().int(),
+  projects: z.array(ClientProjectRow),
+}).strict();
+export const SetClientsInput = z.object({
+  schemaVersion: z.literal(1), target: Target, map: ClientsMapDraft,
+  expectedSha256: Sha.nullable(), confirm: Sha,
+}).strict();
+export const SetClientsOutput = z.object({ schemaVersion: z.literal(1), sha256: Sha, map: ClientsMapDraft }).strict();
+export const SetClientPoolInput = z.object({
+  schemaVersion: z.literal(1), target: Target, client: ClientRef, pool: PeerPool,
+  expectedSha256: Sha.nullable(), confirm: Sha,
+}).strict();
+export const SetClientPoolOutput = z.object({ schemaVersion: z.literal(1), sha256: Sha }).strict();
+export const SetClientProtocolInput = z.object({
+  schemaVersion: z.literal(1), target: Target, client: ClientRef, text: z.string().max(256 * 1024),
+  expectedSha256: Sha.nullable(), confirm: Sha,
+}).strict();
+export const SetClientProtocolOutput = z.object({ schemaVersion: z.literal(1), sha256: Sha }).strict();
 /** Jev provider block stored at slp-runtime/state/jev.json — two kinds.
  *  openrouter: model must be a pinned `<owner>/jev-<version>` id; aliases
  *  (~typesafe/jev-latest, jev-latest, jev-preview) drift and are rejected.
@@ -588,6 +745,15 @@ export const getRoleRouting = defineRpc({ name: "get-role-routing", input: GetRo
 export const setRoleRouting = defineRpc({ name: "set-role-routing", input: SetRoleRoutingInput, output: SetRoleRoutingOutput });
 export const getPeerPool = defineRpc({ name: "get-peer-pool", input: GetPeerPoolInput, output: GetPeerPoolOutput });
 export const setPeerPool = defineRpc({ name: "set-peer-pool", input: SetPeerPoolInput, output: SetPeerPoolOutput });
+export const getClients = defineRpc({ name: "get-clients", input: GetClientsInput, output: GetClientsOutput });
+export const getClientFiles = defineRpc({ name: "get-client-files", input: GetClientFilesInput, output: GetClientFilesOutput });
+export const validateClientsDraft = defineRpc({ name: "validate-clients-draft", input: ValidateClientsDraftInput, output: ValidateClientsDraftOutput });
+export const identifyRepository = defineRpc({ name: "identify-repository", input: IdentifyRepositoryInput, output: IdentifyRepositoryOutput });
+export const explainResolution = defineRpc({ name: "explain-resolution", input: ExplainResolutionInput, output: ExplainResolutionOutput });
+export const listClientProjects = defineRpc({ name: "list-client-projects", input: ListClientProjectsInput, output: ListClientProjectsOutput });
+export const setClients = defineRpc({ name: "set-clients", input: SetClientsInput, output: SetClientsOutput });
+export const setClientPool = defineRpc({ name: "set-client-pool", input: SetClientPoolInput, output: SetClientPoolOutput });
+export const setClientProtocol = defineRpc({ name: "set-client-protocol", input: SetClientProtocolInput, output: SetClientProtocolOutput });
 export const getJev = defineRpc({ name: "get-jev", input: GetJevInput, output: GetJevOutput });
 export const setJev = defineRpc({ name: "set-jev", input: SetJevInput, output: SetJevOutput });
 export const setJevKey = defineRpc({ name: "set-jev-key", input: SetJevKeyInput, output: SetJevKeyOutput });
@@ -827,6 +993,21 @@ export type GetPeerPoolRequest = z.infer<typeof GetPeerPoolInput>;
 export type GetPeerPoolResult = z.infer<typeof GetPeerPoolOutput>;
 export type SetPeerPoolRequest = z.infer<typeof SetPeerPoolInput>;
 export type SetPeerPoolResult = z.infer<typeof SetPeerPoolOutput>;
+export type ClientsMapDraftValue = z.infer<typeof ClientsMapDraft>;
+export type GetClientsResult = z.infer<typeof GetClientsOutput>;
+export type GetClientFilesResult = z.infer<typeof GetClientFilesOutput>;
+export type ValidateClientsDraftRequest = z.infer<typeof ValidateClientsDraftInput>;
+export type ValidateClientsDraftResult = z.infer<typeof ValidateClientsDraftOutput>;
+export type IdentifyRepositoryResult = z.infer<typeof IdentifyRepositoryOutput>;
+export type ExplainResolutionResult = z.infer<typeof ExplainResolutionOutput>;
+export type IdentityCheckValue = z.infer<typeof IdentityCheck>;
+export type ClientRulesDraftValue = z.infer<typeof ClientRulesDraft>;
+export type ListClientProjectsResult = z.infer<typeof ListClientProjectsOutput>;
+export type ClientProjectRowValue = z.infer<typeof ClientProjectRow>;
+export type SetClientsRequest = z.infer<typeof SetClientsInput>;
+export type SetClientsResult = z.infer<typeof SetClientsOutput>;
+export type SetClientPoolRequest = z.infer<typeof SetClientPoolInput>;
+export type SetClientProtocolRequest = z.infer<typeof SetClientProtocolInput>;
 export type JevProviderValue = z.infer<typeof JevProvider>;
 export type JevConfigValue = z.infer<typeof JevConfig>;
 export type JevViewValue = z.infer<typeof JevView>;

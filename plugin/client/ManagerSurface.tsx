@@ -8,7 +8,7 @@
 // share one host session; drafts remain mounted while sections change.
 // Target paths and authority acknowledgments never enter screen params.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useRpc } from "@getpaseo/plugin/client";
+import { usePaseo, useRpc } from "@getpaseo/plugin/client";
 import { Modal } from "@getpaseo/plugin/client/react-native";
 import type { PluginScreenProps } from "@getpaseo/plugin/client";
 import type { PluginTheme } from "@getpaseo/plugin";
@@ -18,7 +18,7 @@ import {
   View,
 } from "react-native";
 import { ptBR, Text } from "./pt-br.ts";
-import { activate, catalog, deactivate, reconcile, status, localTarget, setLanguage, getRoleRouting, setRoleRouting, getJev, setJev, setJevKey, testJev, getPeerPool, setPeerPool } from "../shared/contracts.ts";
+import { activate, catalog, deactivate, reconcile, status, localTarget, setLanguage, getRoleRouting, setRoleRouting, getJev, setJev, setJevKey, testJev, getPeerPool, setPeerPool, getClients, getClientFiles, validateClientsDraft, identifyRepository, listClientProjects, explainResolution, setClients, setClientPool, setClientProtocol } from "../shared/contracts.ts";
 import { getSupervision, setSupervision } from "../shared/supervision.ts";
 import { FAMILY_IDS, FAMILY_LABEL, FAMILY_PICKER_ORDER } from "../shared/runtime/families.ts";
 import type { RoleName } from "../shared/runtime/families.ts";
@@ -89,6 +89,8 @@ import { useLanguageCard } from "./cards/language.ts";
 import { useRoutingCard, RoutingCard } from "./cards/routing.tsx";
 import { useJevCard, JevCard, JEV_KIND_DEFAULT, JEV_KIND_LABEL } from "./cards/jev.tsx";
 import { usePeerPoolCard, PeerPoolCard } from "./cards/peer-pool.tsx";
+import { ClientsCard, useClientsCard } from "./cards/clients.tsx";
+import { ClientPoolSession } from "./cards/client-pool.tsx";
 import { useSupervisionCard, SupervisionCard } from "./cards/supervision.tsx";
 
 // Family knowledge derives from the shared registry (shared/runtime/families.ts):
@@ -144,6 +146,16 @@ function ManagerSession({ host, layout, theme, navigation, params = {}, onSectio
   const callTestJev = useRpc(testJev);
   const callGetPeerPool = useRpc(getPeerPool);
   const callSetPeerPool = useRpc(setPeerPool);
+  const callGetClients = useRpc(getClients);
+  const callGetClientFiles = useRpc(getClientFiles);
+  const callValidateClients = useRpc(validateClientsDraft);
+  const callIdentify = useRpc(identifyRepository);
+  const callListProjects = useRpc(listClientProjects);
+  const callExplain = useRpc(explainResolution);
+  const callSetClients = useRpc(setClients);
+  const callSetClientPool = useRpc(setClientPool);
+  const callSetClientProtocol = useRpc(setClientProtocol);
+  const paseoApi = usePaseo();
   const callGetSupervision = useRpc(getSupervision);
   const callSetSupervision = useRpc(setSupervision);
 
@@ -356,6 +368,21 @@ function ManagerSession({ host, layout, theme, navigation, params = {}, onSectio
     scrollFocusNode,
     update,
   });
+
+  // "Clientes": the central client map. The map/protocol/diagnosis state lives
+  // in cards/clients.tsx; the selected client's pool is the same Peer pool
+  // editor mounted through adapters, so a client's pool never mixes with the
+  // user pool or another client's (its snapshot is keyed by target + client).
+  const clientsApi = {
+    getClients: callGetClients, getClientFiles: callGetClientFiles, validate: callValidateClients,
+    identify: callIdentify, listProjects: callListProjects, explain: callExplain, setClients: callSetClients,
+    setClientPool: callSetClientPool, setClientProtocol: callSetClientProtocol,
+    listWorkspaces: async () => (await paseoApi.workspaces.list()).entries.flatMap(entry => {
+      const workspace = entry as { id: string; name?: string; workspaceDirectory?: string };
+      return typeof workspace.workspaceDirectory === "string" ? [{ id: workspace.id, name: workspace.name ?? workspace.workspaceDirectory, directory: workspace.workspaceDirectory }] : [];
+    }),
+  };
+  const clients = useClientsCard({ target, targetKey: key, api: clientsApi, update });
 
   // The supervision card owns the config snapshot, draft (which Leads, what
   // happens on a finding, thresholds), agent pickers, CAS save/reload and
@@ -822,6 +849,34 @@ function ManagerSession({ host, layout, theme, navigation, params = {}, onSectio
           retryCatalog={retryCatalog}
           retryFeatureSet={retryFeatureSet}
           scrollFocusNode={scrollFocusNode}
+        />
+        </View>
+      ) : null}
+
+      {target ? (
+        <View style={sectionShown("clients")}>
+        <ClientsCard
+          colors={colors}
+          compact={compact}
+          state={clients}
+          poolSlot={target && key ? clients.opened.map(client => (
+            <ClientPoolSession
+              key={`${key}|${client}`}
+              colors={colors}
+              compact={compact}
+              active={clients.selected === client}
+              client={client}
+              target={target}
+              targetKey={key}
+              adapters={clients.poolAdaptersFor(client)}
+              cache={cache}
+              statusView={statusView}
+              jev={jev}
+              availableFamilies={availableFamilies}
+              scrollFocusNode={scrollFocusNode}
+              update={update}
+            />
+          )) : null}
         />
         </View>
       ) : null}

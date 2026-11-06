@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "protectedRoots": ["/absolute/path/to/clients-root"],
+  "clients": {
+    "ClienteExemplo": { "directory": "cliente-exemplo" }
+  },
+  "repositories": [
+    {
+      "client": "ClienteExemplo",
+      "project": "grupo/api",
+      "gitCommonDir": "/absolute/path/to/clients-root/api/.git",
+      "originSha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

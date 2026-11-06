@@ -16,7 +16,7 @@ read-only and does not verify or select a runtime for execution.
 | `prepare --schema`, `prepare-handoff --schema` | No | Yes |
 | `monitor`, `record-build` (including `--schema`) | No | Yes |
 | `identity`, `snapshot`, `review-packet`, `records`, `verify-handback` | No | Yes |
-| `routes`, `route-decide` (including `--schema`), `inventory`, `agents`, `notebook`, `status`, `local-target` | No | Yes; relevant daemon files/configuration are still needed |
+| `routes`, `clients validate`, `route-decide` (including `--schema`), `inventory`, `agents`, `notebook`, `status`, `local-target` | No | Yes; relevant daemon files/configuration are still needed |
 | `instructions` | No for a source preview | Yes; a managed render needs its binding environment |
 | `init`, `materialize`, `install` | No | Yes |
 | `upgrade`, `uninstall`, `verify` | No for the invoking CLI | Yes; the previous/target directory must be installed |
@@ -650,6 +650,36 @@ require restart or a manual reload, reflected in the result and exit 1.
 `installed.json` and checks the optional binding-file hash. It prints the
 manifest on success and exits 1 for a missing receipt, incomplete payload or
 drift. It does not establish provider health or E2E acceptance.
+
+## `clients validate`
+
+`clients validate [--paseo-home <absolute-home>]` reads
+`<home>/slp-clients/clients.json` and every client directory it names, without
+writing. It prints one deterministic JSON report (`ok`, `mapSha256`, sorted
+`clients` with file hashes and option counts, `repositories`, `errors`) and exits
+1 when the map is absent, invalid (including repeated keys), a `gitCommonDir` or
+protected root does not exist on this host or is not in canonical real-path form,
+two entries name one common-dir, or any client pool/protocol is missing,
+symlinked, oversized or fails Peer-pool validation. A version 2 map adds
+`mapVersion`, `strict`, per-client `rulesSha256` and per-repository `localOnly`
+(a version 1 report is unchanged), and a local-only entry whose repository now
+has a remote is an error. See
+[the central client map](operations.md#central-client-map-pool-and-protocol-per-client-outside-repositories).
+
+## `clients check`
+
+`clients check <absolute-path> [--paseo-home <absolute-home>]` is read-only: it
+resolves the client binding of the checkout at `<path>` with the same lookup seats
+use and prints one JSON report (`path`, `ok`, `binding` — `absent`, `unmapped`,
+`mapped` with `client`, `project`, `mapVersion`, `strict`, `localOnly`, or
+`blocked` with `error {code, message}` — plus `rules` and `identity`).
+`identity` compares the *effective* Git identity (`git config --get user.name` /
+`user.email`) with the `commitIdentity` rule of the checkout's **own** client and
+lists the repository-local values: `state` is `ok`, `differs`, `unconfigured` or
+`unknown`; it is `null` when the client has no such rule. Exit 1 when the binding is
+blocked (for example `CLIENT_UNMAPPED` under a strict map) or the identity is not
+`ok`; otherwise 0. Nothing is ever written, including the repository's Git config.
+See [client binding](operations.md#client-binding-strict-mode-local-only-rules-pending-projects-git-identity).
 
 ## `desk-recover`
 

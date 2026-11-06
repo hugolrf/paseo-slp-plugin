@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "policy": "Human maintains model suitability and quota. Lead chooses within the current assignment budget.",
+  "quotaFallback": { "enabled": false, "optionId": null },
+  "options": [
+    {
+      "id": "exemplo-balanced",
+      "displayName": "Balanced",
+      "description": "Balanced coding seat for the client's repositories.",
+      "runtimeRule": "none",
+      "effortPolicy": { "kind": "fixed", "thinkingOptionId": "high" },
+      "provider": "codex",
+      "model": "gpt-5",
+      "roles": ["peer"],
+      "enabled": true,
+      "availability": "ready",
+      "modeId": "full-access",
+      "suitableFor": ["coding"],
+      "avoidFor": [],
+      "notes": "Example seat; replace with the client's approved model."
+    }
+  ]
+}

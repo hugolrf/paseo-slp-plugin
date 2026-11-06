@@ -498,6 +498,7 @@ test('all manager sections and binding retain completed reads on reopen while fr
   const metadata = { schemaVersion: 1, models: [{ id: 'fixture-model', label: 'Fixture model', thinkingOptions: [{ id: 'high', label: 'high' }] }],
     modes: [{ id: 'full-access', label: 'Full access' }], features: [{ id: 'flag', label: 'Feature flag', type: 'toggle', value: false }], error: null };
   const reads = {
+    'get-clients': { schemaVersion: 1, canonicalHome: '/a', mapState: 'absent', mapSha256: null, map: null, mapError: null, hostErrors: [], mapExternalChange: false, clients: [] },
     'local-target': { daemonHome: '/a' }, status: runtime({ embeddedCandidateSha256: A, communicationLanguage: 'Vietnamese' }),
     'get-role-routing': { routing: { schemaVersion: 1, supervisor: { family: 'codex', model: 'fixture-model', modeId: 'full-access', thinkingOptionId: 'high' }, lead: { family: 'codex', model: 'fixture-model' } } },
     'get-peer-pool': { pool: { version: 1, policy: 'Remember this pool', options: [], quotaFallback: { enabled: false, optionId: null } }, sha256: A, error: null, legacy: null, legacyError: null },
