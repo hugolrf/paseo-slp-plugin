@@ -622,8 +622,11 @@ Visual check after installing the plugin (not exercised in this repository's tes
 which render the card with test doubles): (1) Manager → Clientes shows "Sem mapa" and
 creates nothing; the first edit starts a version 2 draft with strict mode on and the
 suggested global rules (`origin-id - pt-title`, AI footer forbidden; no commit identity is suggested — define it yourself) — nothing is
-saved yet; (2) "Projetos do Paseo" lists every project of the host, collapsed by
-repository, with "N sem cliente" next to the title, "Somente local" on a repository
+saved yet; (2) "Projetos do Paseo" lists every Paseo **project** of the host (never a task-titled
+workspace), one row per repository with "Workspaces N" and the main checkout, grouped under
+the project name when it has several repositories, folders without Git as "Pasta sem Git"
+("Vincular a …" is only enabled when the runtime can read containers; the HOME never is),
+with "N sem cliente" next to the title, "Somente local" on a repository
 without remote and "Identidade Git diverge" where the Git identity differs from the
 client's rule; (3) add a client, pick it under "Vincular a:", press "Selecionar todos sem
 cliente" and "Vincular os selecionados ao cliente escolhido" — the rows show "Alterado no
@@ -696,12 +699,23 @@ review). A candidate runtime without `FORMATION_CAPABILITIES.clientBinding` is r
 (CAPABILITY_GAP) wherever a version 2 map binds or blocks the repository, instead of
 reading the map divergently.
 
-**Pending projects.** The Clientes screen asks the host for its workspaces and sends
-only `id`, name and path to `list-client-projects`; the server resolves each path to
-its Git common-dir (worktrees collapse into one row) and returns `bound`, `pending` (no
-entry), `blocked` (the map refuses it, e.g. identity drift) or `not-git`. Pending is
-computed on every read — no state, no dependence on a `workspace.created` event — and
-is only a badge and a count; it never blocks creating the project.
+**Pending projects.** The row on the Clientes screen is the Paseo **project** (never a
+workspace, whose name is a task title). The screen asks the host for its workspaces and
+sends, per workspace, `id`, name, path and the optional project fields of the host
+descriptor (`projectId`, the label `projectCustomName ?? projectDisplayName`,
+`projectRootPath`, `projectKind`, `workspaceKind`) to `list-client-projects`; the server
+resolves each path to its Git common-dir and returns one row per repository — all its
+worktrees and checkouts collapse into it ("N workspaces", the main checkout path) —
+titled with the project label (the repository folder name when the host gave none). A
+project with several repositories shows one row per repository grouped under its name;
+two projects that point at the same repository are one row with a duplicate-project
+warning (one binding covers both). A row is `bound`, `pending` (no entry), `blocked` (the
+map refuses it, e.g. identity drift) or `not-git`. `projectId` only groups the UI: it is
+never written to the map or a pin. Pending is computed on every read — no state, no
+dependence on a `workspace.created` event — and is only a badge and a count; it never
+blocks creating the project. The prefix of a label such as "CemigSim / client-area-api"
+is only a *suggestion* of the client (a badge, a pre-selected choice, an explicit "Vincular
+a CemigSim" button); it never binds anything by itself.
 
 **Local-only repositories.** `originSha256: null` (version 2 only; a version 1 map still
 rejects it) declares a repository with **zero** remotes. If any remote (`origin`,
@@ -729,6 +743,45 @@ ROUTE_DRIFT at the next step. The receipt warning reads `client rules <client> (
 Accepted gap: a rules edit between the last `verify` and the hook's create (milliseconds)
 is not detected.
 
+**Project folders without Git (`containers`).** A Paseo project that is not a repository
+("DWLaw / Geral", "Financeiro", "Cerebro") has no common-dir or origin, so version 2
+adds the optional top-level key `containers: [{ client, project, path }]` (`path` = the
+project's `projectRootPath`, absolute, existing, canonical; up to 256; no version bump —
+a version 1 map rejects the key and a version 2 map without it is unchanged). A
+directory that Git proves is **not** a repository and lies at or under a container
+resolves to that container's client (binding, rules, pin, hook and strict check all use
+the same lookup); the deepest container wins; two entries naming one directory are
+`CLIENT_MAP_INVALID`. **A container never covers a Git repository**: a repository inside it
+is resolved only by its own entry (under a strict map it still needs one). The anchor is
+the path only (like local-only). Blocking guards, enforced at lookup, `clients validate`
+and the draft review: a container can never be the user's HOME, `/`, a system root
+(`/Users`, `/home`, `/Volumes`, `/tmp`, …), any folder that contains the HOME, any
+folder that is, or contains, a protected root, or the root of another file system
+(`st_dev` differs from its parent's: macOS `/Volumes/<disk>`, WSL `/mnt/<drive>`; checked
+on macOS only — the WSL case is the same rule but was not exercised). A container above other containers or mapped
+repositories is warned per container in the review, and the screen asks a separate
+confirmation ("cover N projects") before binding it. **Capability gate:** the screen
+saves `containers` only when the server verifies that the *bound* runtime declares
+`FORMATION_CAPABILITIES.clientContainers`; otherwise it shows the reason and writes
+nothing (the server refuses the same draft whatever the screen sent, unless the list is
+unchanged or being removed). A candidate without that capability is refused with an
+explicit CAPABILITY_GAP in formation and in `task deliver` whenever the map declares
+containers. Install the new runtime before saving the first container: an already
+installed older runtime would read a map with `containers` as invalid.
+
+**A degraded Git repository is never "a plain folder".** Git answers "not a git repository"
+for a repository whose `.git/HEAD` is missing or corrupt, for a linked worktree whose main
+checkout moved and for an unreadable `.git`. Before a directory inherits a container, every
+step from the directory up to the container root is checked for a `.git` entry (file or
+directory, readable or not); if one exists the directory is **blocked** (`CLIENT_UNMAPPED`,
+"degraded Git repository inside a client folder", strict or not) — it neither inherits the
+container's client or rules nor falls back to the user pool, and the project list shows the
+row as blocked. With a non-strict map the create hook then injects no rules at all.
+**The caller's `projectRootPath` is validated:** the list uses it only when it is an
+ancestor-or-equal (by file identity) of the workspace's real path; otherwise the real path is
+the row, so a row can never be "bound" to a container that does not cover it, and the path the
+screen saves as a container always comes from a validated root.
+
 **Hook reach — host-dependent (CAPABILITY_GAP).** The strict block in the `agent.create`
 hook (the native `create_agent` compatibility path) only holds if the host aborts a create
 when a `before` hook throws and lets the hook finish. In-repo evidence says a throw aborts
@@ -750,7 +803,7 @@ other hash, hash → local-only, local-only → hash). On the list, a row in
 `CLIENT_IDENTITY_DRIFT` has no ordinary "Vincular"; "Aceitar a nova identidade" is a
 separate step that shows the saved → new identity before it edits the draft.
 
-**Accepted limits, documented.** A local-only entry is anchored by its path only (a
+**Accepted limits, documented.** The client chip pre-selected by the first picked project stays selected when more projects are picked (a batch goes to one client, visible on the screen). `target.daemonHome` is supplied by the caller (the capability is measured from the plugin's own bound runtime). A local-only entry is anchored by its path only (a
 repository deleted and recreated at the same path without a remote inherits the
 binding; a hash entry would drift). Any change of a version 2 map moves the pin's
 `mapSha256` also at the local and main rungs, not only at the central rung (version 1 is

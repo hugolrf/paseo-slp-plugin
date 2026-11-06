@@ -520,7 +520,7 @@ export const PT_BR_UI: Readonly<Record<string, string>> = {
   "The map hash is part of every central pin, so seats of all central clients are affected, not only the clients listed.": "O hash do mapa faz parte de todo pin central, então os assentos de todos os clientes centrais são afetados, não só os listados.",
   "The protocol changed since it was read. Your draft is kept.": "O protocolo mudou desde a leitura. Seu rascunho foi mantido.",
   "The server reads the common dir and the origin hash from Git; you never type them.": "O servidor lê o common dir e o hash da origem no Git; você nunca os digita.",
-  "Use this workspace": "Usar este workspace",
+  "Use this project": "Usar este projeto",
   "Who resolves this folder?": "Quem resolve esta pasta?",
   "Close client": "Fechar cliente",
   "Latest map loaded. Your draft is kept and will replace it on save.": "Mapa atual carregado. Seu rascunho foi mantido e vai substituí-lo ao salvar.",
@@ -549,7 +549,7 @@ export const PT_BR_UI: Readonly<Record<string, string>> = {
   "Git common dir": "Diretório comum do Git",
   "Identify repository": "Identificar repositório",
   "Linked worktree": "Worktree vinculado",
-  "Load Paseo workspaces": "Carregar workspaces do Paseo",
+  "Load Paseo projects": "Carregar projetos do Paseo",
   "Map hash": "Hash do mapa",
   "Needs attention": "Precisa de atenção",
   "New client name": "Nome do novo cliente",
@@ -632,6 +632,11 @@ export const PT_BR_UI: Readonly<Record<string, string>> = {
   "Confirm the new identity": "Confirmar a nova identidade",
   "Accept the new identity": "Aceitar a nova identidade",
   "local-only": "somente local",
+  "Main checkout": "Checkout principal",
+  "Project folder": "Pasta do projeto",
+  "Folder without Git": "Pasta sem Git",
+  "Confirm that this folder covers them": "Confirmar que esta pasta cobre esses projetos",
+  "Containers cannot be saved yet.": "Ainda não é possível salvar pastas de projeto.",
 };
 
 export const PT_BR_DYNAMIC_FRAGMENTS: Readonly<Record<string, string>> = {
@@ -846,6 +851,19 @@ export const PT_BR_DYNAMIC_FRAGMENTS: Readonly<Record<string, string>> = {
   "origin identity changed ": "identidade de origem alterada ",
   "; the drift guard for this repository trusts the new identity from this save on": "; a guarda de deriva deste repositório passa a confiar na nova identidade a partir deste salvamento",
   "local-only (no remote)": "somente local (sem remote)",
+  " repositories": " repositórios",
+  "Suggested client: ": "Cliente sugerido: ",
+  "Bind to ": "Vincular a ",
+  "Duplicate projects for one repository:": "Projetos duplicados para um mesmo repositório:",
+  ". One binding covers them all.": ". Um único vínculo cobre todos.",
+  "This folder contains ": "Esta pasta contém ",
+  " other project(s). It binds only non-Git directories; Git repositories inside keep their own binding.": " outro(s) projeto(s). Ela vincula apenas diretórios sem Git; os repositórios Git dentro dela mantêm o próprio vínculo.",
+  "containers are not saved: the capabilities of the bound runtime cannot be verified (no active, verified binding)": "pastas de projeto não são salvas: as capacidades do runtime vinculado não podem ser verificadas (sem vínculo ativo e verificado)",
+  "containers are not saved: the bound runtime does not declare clientContainers; update the runtime first": "pastas de projeto não são salvas: o runtime vinculado não declara clientContainers; atualize o runtime primeiro",
+  "is the user home, a system root or a folder that contains the home: it would cover everything, so it can never be bound": "é a home do usuário, uma raiz de sistema ou uma pasta que contém a home: cobriria tudo e nunca pode ser vinculada",
+  "degraded Git repository inside a client folder (": "repositório Git degradado dentro de uma pasta de cliente (",
+  " exists but Git does not recognize a repository): it does not inherit the folder's client; repair or remove it; no user-pool fallback": " existe, mas o Git não reconhece um repositório): ele não herda o cliente da pasta; conserte ou remova; sem fallback para o pool do usuário",
+  "is the root of a file system (a whole disk or share): it would cover far more than one project, so it can never be bound": "é a raiz de um sistema de arquivos (um disco ou compartilhamento inteiro): cobriria muito mais que um projeto e nunca pode ser vinculada",
 };
 
 const DYNAMIC_TRANSLATIONS = Object.entries(PT_BR_DYNAMIC_FRAGMENTS).sort(([left], [right]) => right.length - left.length);

@@ -401,6 +401,8 @@ export const ClientsMapDraft = z.object({
     /** `null` (version 2): a local-only repository, which must have zero remotes. */
     gitCommonDir: z.string().max(4096), originSha256: z.string().max(128).nullable(),
   }).passthrough()).max(4096),
+  /** Version 2, optional: project root folders without Git (path only). The server refuses to save them unless the runtime declares `clientContainers`. */
+  containers: z.array(z.object({ client: z.string().max(256), project: z.string().max(512), path: z.string().max(4096) }).passthrough()).max(256).optional(),
 }).passthrough();
 const GitIdentity = z.object({ name: z.string().nullable(), email: z.string().nullable() }).strict();
 /** Read-only comparison of a checkout's Git identity with the rule of its own client. */
@@ -429,6 +431,8 @@ export const GetClientsOutput = z.object({
   map: ClientsMapDraft.nullable(),
   /** From the saved map; `false` for version 1 and for no map. */
   strict: z.boolean(),
+  /** May the screen save `containers`? Only when the bound runtime declares `clientContainers` (otherwise the reason is shown and nothing is written). */
+  containerWrites: z.object({ allowed: z.boolean(), reason: z.string().nullable() }).strict(),
   mapError: z.string().nullable(),
   hostErrors: z.array(z.string()),
   mapExternalChange: z.boolean(),
@@ -492,13 +496,34 @@ export const ExplainResolutionOutput = z.object({
 // on the screen). The host list is data from the screen; identity, binding and
 // "pending" are always computed by the server from the paths. Worktrees of one
 // repository collapse into one row (keyed by Git common-dir).
-export const ClientProjectWorkspace = z.object({ id: z.string().max(256), name: z.string().max(512), path: AbsolutePath }).strict();
+// The Paseo PROJECT a workspace belongs to comes from the host's descriptor (projectId, projectCustomName ??
+// projectDisplayName, projectRootPath, projectKind, workspaceKind). The screen's row is that project, never the
+// workspace (whose name is a task title). All optional so a caller that predates them still works; display and
+// grouping data only: the binding is always computed from the paths, and `projectId` never enters the map or a pin.
+export const ClientProjectWorkspace = z.object({
+  id: z.string().max(256), name: z.string().max(512), path: AbsolutePath,
+  projectId: z.string().max(256).optional(), projectLabel: z.string().max(512).optional(),
+  projectRootPath: AbsolutePath.optional(), projectKind: z.enum(["git", "directory", "non_git"]).optional(),
+  workspaceKind: z.enum(["directory", "local_checkout", "checkout", "worktree"]).optional(),
+}).strict();
 export const ListClientProjectsInput = z.object({
   schemaVersion: z.literal(1), target: Target, workspaces: z.array(ClientProjectWorkspace).max(1024),
 }).strict();
 export const ClientProjectRow = z.object({
   /** Git common-dir, or `path:<directory>` for a directory that is not a Git checkout. */
   key: z.string(),
+  /** repository: bound by Git identity; folder: a project root without Git, bound as a container (path only). */
+  kind: z.enum(["repository", "folder"]),
+  /** Why a folder can never be bound (home, system root, above a protected root); null otherwise. */
+  containerBlocked: z.string().nullable(),
+  /** The Paseo project this row belongs to (null when the host did not say); several rows may share one project. */
+  projectId: z.string().nullable(), projectLabel: z.string().nullable(),
+  /** Every Paseo project that lists this repository (two projects may point at one repository: one binding, a duplicate warning). */
+  projects: z.array(z.object({ id: z.string(), label: z.string() }).strict()),
+  /** Name of the repository (main checkout folder) or of the project root folder; the row title is `name`, the project label. */
+  repoName: z.string(), workspaceCount: z.number().int(),
+  /** Main checkout (Git) or project root folder (no Git). */
+  mainPath: z.string().nullable(),
   /** bound: an entry names a client; pending: no entry (blocked under a strict map); blocked: the map refuses it; not-git: no Git identity to map. */
   state: z.enum(["bound", "pending", "blocked", "not-git"]),
   name: z.string(), workspaceIds: z.array(z.string()), paths: z.array(z.string()),

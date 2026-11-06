@@ -15,6 +15,7 @@ import { createManager } from "./server/manager.ts";
 import { createJev } from "./server/jev.ts";
 import { createStateStore } from "./server/state-store.ts";
 import { createClientsStore } from "./server/clients-store.ts";
+import { createRuntimeCapabilities } from "./server/runtime-capabilities.ts";
 import { createSupervisionState } from "./server/supervision/state.ts";
 import { createSupervisionObserver, type SupervisionObserver } from "./server/supervision/observer.ts";
 import { detectDaemonHome, resolveDaemonHome } from "./server/daemon-home.ts";
@@ -85,7 +86,14 @@ export default function contribute(server: Parameters<PluginServerContribution>[
   // a `confirm` token and an audit line. Like every RPC here they are reachable
   // by any local process through the daemon's plugin.rpc.invoke (host gap); no
   // Desk tool or slp.mjs command exposes them (tests prove the import graph).
-  const clients = createClientsStore();
+  // The screen saves version-2 features (containers) only when the bound, verified runtime declares them. `journal`
+  // and `materializer` exist by the time this is called (late-bound closures).
+  const clients = createClientsStore({
+    runtimeCapabilities: createRuntimeCapabilities({
+      readActiveBinding: () => readActiveBinding(journal),
+      verify: binding => materializer.verifyPublished(binding.runtimePath, binding.candidateSha256, binding.payloadSha256),
+    }),
+  });
   server.handle(getClients, input => clients.getClients(input));
   server.handle(getClientFiles, input => clients.getClientFiles(input));
   server.handle(validateClientsDraft, input => clients.validateClientsDraft(input));

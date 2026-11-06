@@ -1,4 +1,4 @@
-import { ClientMapError, ladderBinding, resolveSourceFor } from "./runtime/cli/clients.ts";
+import { ClientMapError, ladderBinding, mapHasContainers, resolveSourceFor } from "./runtime/cli/clients.ts";
 import type { Provider } from "./runtime/cli/types.ts";
 import type { PresetRoutingContext } from "./runtime/cli/preset-routing.ts";
 import { reobservePeerReference, type ReferenceHost } from "./peer-reference.ts";
@@ -126,7 +126,7 @@ export function taskProviderInventory(observed: Awaited<ReturnType<typeof observ
 }
 
 type LaunchModule = {
-  FORMATION_CAPABILITIES?: { peerPresets?: number; centralClients?: number; clientBinding?: number };
+  FORMATION_CAPABILITIES?: { peerPresets?: number; centralClients?: number; clientBinding?: number; clientContainers?: number };
   resolveBinding(role: string, request: {
     repository: string;
     assignment: string;
@@ -192,6 +192,9 @@ export function createTaskRuntimeResolver(deps: {
         let bound = false;
         try { bound = ladderBinding({ home: deps.daemonHome, cwd: repository }) !== null; } catch (error) { bound = error instanceof ClientMapError; }
         if (bound) return reject("CAPABILITY_GAP", "the bound candidate lacks client binding (map version 2) required by this repository");
+      }
+      if (module.FORMATION_CAPABILITIES?.clientContainers !== 1 && mapHasContainers(deps.daemonHome)) {
+        return reject("CAPABILITY_GAP", "the bound candidate lacks client containers declared by the client map");
       }
       const resolved = module.resolveBinding("peer", {
         repository, assignment: "Resolve the task runtime; no work prompt is issued here.",

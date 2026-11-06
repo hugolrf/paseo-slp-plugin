@@ -46,9 +46,34 @@ export type ClientsApi = {
   setClients(input: { schemaVersion: 1; target: TargetValue; map: ClientsMapDraftValue; expectedSha256: string | null; confirm: string }): Promise<{ sha256: string }>;
   setClientPool(input: { schemaVersion: 1; target: TargetValue; client: string; pool: PeerPoolValue; expectedSha256: string | null; confirm: string }): Promise<{ sha256: string }>;
   setClientProtocol(input: { schemaVersion: 1; target: TargetValue; client: string; text: string; expectedSha256: string | null; confirm: string }): Promise<{ sha256: string }>;
-  /** Workspaces the connected Paseo host knows (id, name, directory). */
-  listWorkspaces(): Promise<{ id: string; name: string; directory: string }[]>;
+  /** Workspaces the connected Paseo host knows (id, name, directory) with the Paseo PROJECT each belongs to. */
+  listWorkspaces(): Promise<HostWorkspace[]>;
 };
+export type HostWorkspace = { id: string; name: string; directory: string; projectId?: string; projectLabel?: string; projectRootPath?: string; projectKind?: "git" | "directory" | "non_git"; workspaceKind?: "directory" | "local_checkout" | "checkout" | "worktree" };
+
+/** One entry of `paseoApi.workspaces.list()` (the host's workspace descriptor) → what the screen needs.
+ * `name` is the WORKSPACE name (usually a task title); the project is `projectDisplayName` ("Cliente / projeto"),
+ * `projectRootPath` and `projectKind`. An entry without a directory cannot be bound and is skipped. */
+export function workspaceOfEntry(entry: unknown): HostWorkspace[] {
+  if (entry === null || typeof entry !== "object") return [];
+  const d = entry as Record<string, unknown>;
+  const directory = typeof d.workspaceDirectory === "string" ? d.workspaceDirectory : typeof d.directory === "string" ? d.directory : null;
+  if (typeof d.id !== "string" || directory === null) return [];
+  const label = typeof d.projectCustomName === "string" && d.projectCustomName.trim() ? d.projectCustomName : typeof d.projectDisplayName === "string" ? d.projectDisplayName : "";
+  const kind = d.workspaceKind ?? d.kind;
+  return [{
+    id: d.id, name: typeof d.name === "string" ? d.name : directory, directory,
+    ...(typeof d.projectId === "string" && label ? { projectId: d.projectId, projectLabel: label } : {}),
+    ...(typeof d.projectRootPath === "string" && d.projectRootPath.startsWith("/") ? { projectRootPath: d.projectRootPath } : {}),
+    ...(d.projectKind === "git" || d.projectKind === "directory" || d.projectKind === "non_git" ? { projectKind: d.projectKind } : {}),
+    ...(kind === "directory" || kind === "local_checkout" || kind === "checkout" || kind === "worktree" ? { workspaceKind: kind } : {}),
+  }];
+}
+/** "CemigSim / client-area-api" → "CemigSim": only a SUGGESTION of the client (matched, case-insensitively, against the map's clients). */
+export function suggestedClientOf(label: string | null, clients: string[]): string | null {
+  const prefix = label?.split(" / ")[0]?.trim().toLowerCase();
+  return prefix ? clients.find(name => name.toLowerCase() === prefix) ?? null : null;
+}
 
 /** Values the screen SUGGESTS for a new map. They live in the draft only: nothing is written until the Human reviews and confirms.
  * No commit identity is suggested (no personal name or e-mail ships in this repository): the Human defines it, per client or globally. */
@@ -64,7 +89,10 @@ const ensureV2 = (map: ClientsMapDraftValue) => { if (map.version !== 2) { map.v
 /** An existing entry whose repository no longer matches it (origin changed, or local-only that gained a remote). */
 const drifted = (row: ClientProjectRowValue) => row.state === "blocked" && row.code === "CLIENT_IDENTITY_DRIFT" && row.client !== null && row.gitCommonDir !== null && (row.originSha256 !== null || row.localOnly);
 /** A plain bind never touches a drifted row: re-fixing the identity is a separate, explicit action. */
-const bindable = (row: ClientProjectRowValue) => row.gitCommonDir !== null && (row.originSha256 !== null || row.localOnly) && row.code !== "CLIENT_MAP_INVALID" && row.state !== "not-git" && !drifted(row);
+const bindable = (row: ClientProjectRowValue, folders = false) => row.kind === "folder"
+  // A project root without Git binds as a container, and only when the server says the bound runtime can read it back.
+  ? folders && row.containerBlocked === null && row.mainPath !== null && row.code !== "CLIENT_MAP_INVALID" && row.state !== "blocked"
+  : row.gitCommonDir !== null && (row.originSha256 !== null || row.localOnly) && row.code !== "CLIENT_MAP_INVALID" && row.state !== "not-git" && !drifted(row);
 const shortOrigin = (origin: string | null) => (origin === null ? "local-only" : `${origin.slice(0, 12)}…`);
 const clone = (map: ClientsMapDraftValue): ClientsMapDraftValue => JSON.parse(JSON.stringify(map));
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -100,7 +128,7 @@ export function useClientsCard({ target, targetKey, api, update }: {
   useEffect(() => {
     setSelectedRaw(null); setOpened([]); poolReviews.current.clear(); setPoolImpact(null);
     setBusy(false); setNotice(null); setErrorText(null); setCandidate(null); setExplained(null);
-    setProjects(null); setPicked([]); setBindTo(null); setProposed(null);
+    setProjects(null); setPicked([]); setBindTo(null); setProposed(null); setCoverOk([]);
   }, [targetKey]);
 
   const draft = targetKey ? mapDrafts.current.get(targetKey) ?? null : null;
@@ -192,31 +220,60 @@ export function useClientsCard({ target, targetKey, api, update }: {
     if (!target || !targetKey) return;
     const list = await run(() => api.listWorkspaces());
     if (!list) return;
-    const found = await run(() => api.listProjects({ schemaVersion: 1, target, workspaces: list.map(item => ({ id: item.id, name: item.name, path: item.directory })) }));
+    const found = await run(() => api.listProjects({ schemaVersion: 1, target, workspaces: list.map(({ directory, ...rest }) => ({ ...rest, path: directory })) }));
     if (found) { setProjects(found); setPicked(keys => keys.filter(key => found.projects.some(row => row.key === key))); }
   }
   // The list shows the DRAFT binding next to the saved one, so a batch bind is visible before it is saved.
   const projectRows = (projects?.projects ?? []).map(row => {
-    const entry = row.gitCommonDir === null ? undefined : map.repositories.find(item => item.gitCommonDir === row.gitCommonDir);
+    const entry = row.kind === "folder" ? map.containers?.find(item => item.path === row.mainPath)
+      : row.gitCommonDir === null ? undefined : map.repositories.find(item => item.gitCommonDir === row.gitCommonDir);
     const saved = row.state === "bound" ? row.client : null;
-    return { ...row, draftClient: entry?.client ?? null, changed: (entry?.client ?? null) !== saved };
+    return { ...row, draftClient: entry?.client ?? null, changed: (entry?.client ?? null) !== saved,
+      // Only a hint taken from "Client / project"; it binds nothing.
+      suggestedClient: row.projects.map(project => suggestedClientOf(project.label, Object.keys(map.clients))).find(name => name !== null) ?? null };
   });
-  const pendingInDraft = projectRows.filter(row => row.gitCommonDir !== null && row.draftClient === null).length;
-  const pickProject = (key: string, on: boolean) => setPicked(keys => on ? (keys.includes(key) ? keys : [...keys, key]) : keys.filter(item => item !== key));
-  const pickPending = () => setPicked(projectRows.filter(row => bindable(row) && row.draftClient === null).map(row => row.key));
+  const containerOk = data?.containerWrites?.allowed === true;
+  const canBind = (row: ClientProjectRowValue) => bindable(row, containerOk);
+  // A folder's "covers": the other projects (folders and repositories) below it. A Git repository is never covered, but the Human must see the overlap.
+  const coversOf = (row: ClientProjectRowValue) => row.kind !== "folder" || row.mainPath === null ? 0
+    : projectRows.filter(other => other.key !== row.key && other.mainPath !== null && other.mainPath.startsWith(`${row.mainPath}/`)).length
+      + (map.containers ?? []).filter(item => item.path !== row.mainPath && item.path.startsWith(`${row.mainPath}/`) && !projectRows.some(other => other.mainPath === item.path)).length;
+  const [coverOk, setCoverOk] = useState<string[]>([]);
+  const confirmCover = (key: string) => setCoverOk(keys => (keys.includes(key) ? keys : [...keys, key]));
+  const pendingInDraft = projectRows.filter(row => (row.kind === "folder" ? row.containerBlocked === null && row.state !== "blocked" : row.gitCommonDir !== null) && row.draftClient === null).length;
+  const pickProject = (key: string, on: boolean) => {
+    setPicked(keys => on ? (keys.includes(key) ? keys : [...keys, key]) : keys.filter(item => item !== key));
+    // Pre-select (never bind) the client suggested by the project label when none is chosen yet.
+    const suggested = projectRows.find(row => row.key === key)?.suggestedClient ?? null;
+    if (on && suggested !== null) setBindTo(current => current ?? suggested);
+  };
+  const pickPending = () => setPicked(projectRows.filter(row => canBind(row) && row.draftClient === null && coversOf(row) === 0).map(row => row.key));
   const bindProjects = (keys: string[], client: string | null) => {
     if (client === null || !Object.hasOwn(map.clients, client)) { setErrorText("Choose the client to bind to first."); return; }
-    const rows = keys.map(key => projectRows.find(row => row.key === key)).filter((row): row is NonNullable<typeof row> => row !== undefined && bindable(row));
+    const rows = keys.map(key => projectRows.find(row => row.key === key)).filter((row): row is NonNullable<typeof row> => row !== undefined && canBind(row));
     if (rows.length === 0) { setErrorText("None of the selected projects can be bound."); return; }
+    // A folder that sits above other projects needs its own explicit confirmation first.
+    const unconfirmed = rows.filter(row => coversOf(row) > 0 && !coverOk.includes(row.key));
+    const ready = rows.filter(row => !unconfirmed.includes(row));
+    if (unconfirmed.length > 0) setErrorText("A folder that contains other projects needs its separate confirmation before it is bound.");
+    if (ready.length === 0) return;
     edit(next => {
-      for (const row of rows) {
+      for (const row of ready) {
+        if (row.kind === "folder") {
+          ensureV2(next);
+          next.containers ??= [];
+          const index = next.containers.findIndex(item => item.path === row.mainPath);
+          const entry = { client, project: index >= 0 ? next.containers[index]!.project : row.projectLabel ?? row.repoName, path: row.mainPath! };
+          if (index >= 0) next.containers[index] = entry; else next.containers.push(entry);
+          continue;
+        }
         const index = next.repositories.findIndex(item => item.gitCommonDir === row.gitCommonDir);
         const entry = { client, project: index >= 0 ? next.repositories[index]!.project : row.projectSuggestion, gitCommonDir: row.gitCommonDir!, originSha256: row.originSha256 };
         if (entry.originSha256 === null) ensureV2(next);
         if (index >= 0) next.repositories[index] = entry; else next.repositories.push(entry);
       }
     });
-    setPicked([]);
+    setPicked(keys => keys.filter(key => unconfirmed.some(row => row.key === key)));
   };
   // Drifted rows: propose (shows old -> new), then confirm; both only edit the draft.
   const [proposed, setProposed] = useState<string | null>(null);
@@ -241,13 +298,14 @@ export function useClientsCard({ target, targetKey, api, update }: {
   };
   const unbindProject = (key: string) => {
     const row = projectRows.find(item => item.key === key);
-    if (row?.gitCommonDir) edit(next => { next.repositories = next.repositories.filter(item => item.gitCommonDir !== row.gitCommonDir); });
+    if (row?.kind === "folder") { edit(next => { if (next.containers) { next.containers = next.containers.filter(item => item.path !== row.mainPath); if (next.containers.length === 0) delete next.containers; } }); setCoverOk(keys => keys.filter(item => item !== key)); }
+    else if (row?.gitCommonDir) edit(next => { next.repositories = next.repositories.filter(item => item.gitCommonDir !== row.gitCommonDir); });
   };
   useEffect(() => { if (target && targetKey && snapshot.loaded) void loadProjects(); }, [targetKey, snapshot.loaded]);
 
   // ---- repositories: identity is computed by the server -----------------
   const [candidate, setCandidate] = useState<(IdentifyRepositoryResult & { path: string }) | null>(null);
-  const [workspaces, setWorkspaces] = useState<{ id: string; name: string; directory: string }[] | null>(null);
+  const [workspaces, setWorkspaces] = useState<HostWorkspace[] | null>(null);
   const [project, setProject] = useState("");
   const identify = async (path: string) => {
     if (!target || !path.trim()) return;
@@ -334,7 +392,7 @@ export function useClientsCard({ target, targetKey, api, update }: {
     map, baseSha, dirty, draft, selected, setSelected, busy, notice, errorText, edit, discard,
     reviewMap, saveMap, rebase, addClient, removeClient, addRoot, removeRoot, removeRepository, renameProject,
     candidate, setCandidate, project, setProject, identify, loadWorkspaces, workspaces, addCandidate,
-    setStrict, setRule, projects, projectRows, pendingInDraft, picked, pickProject, pickPending, setPicked, proposed, identityChange, proposeIdentity, cancelIdentity, acceptIdentity, bindTo, setBindTo, bindProjects, unbindProject, loadProjects,
+    setStrict, setRule, projects, projectRows, pendingInDraft, picked, pickProject, pickPending, setPicked, canBind, coversOf, coverOk, confirmCover, containerOk, proposed, identityChange, proposeIdentity, cancelIdentity, acceptIdentity, bindTo, setBindTo, bindProjects, unbindProject, loadProjects,
     explained, explain, files, protocolText, protocolDraft, setProtocolText, reviewProtocol, saveProtocol, discardProtocol, rebaseProtocol,
     opened, poolAdaptersFor, poolImpact };
 }
@@ -429,6 +487,13 @@ const STATE_LABEL: Record<ClientProjectRowValue["state"], string> = { bound: "Bo
 function ProjectsSection({ colors, s, disabled }: { colors: Colors; s: ClientsCardState; disabled: boolean }) {
   const names = Object.keys(s.map.clients).sort();
   const rows = s.projectRows;
+  // One group per Paseo project; a project with several repositories shows one row per repository under it.
+  const groups: { id: string; label: string; rows: typeof rows }[] = [];
+  for (const row of rows) {
+    const id = row.projectId ?? row.key;
+    const found = groups.find(group => group.id === id);
+    if (found) found.rows.push(row); else groups.push({ id, label: row.projectLabel ?? row.name, rows: [row] });
+  }
   return (
     <View style={styles.field}>
       <View style={[styles.chipRow, wrap]}>
@@ -452,48 +517,69 @@ function ProjectsSection({ colors, s, disabled }: { colors: Colors; s: ClientsCa
         </>
       )}
       {rows.length === 0 ? <Text style={[styles.mutedSmall, { color: colors.foregroundMuted }]}>No projects listed yet.</Text> : null}
-      {rows.map(row => (
-        <View key={row.key} style={[styles.roleBox, { borderColor: s.picked.includes(row.key) ? colors.accent : colors.border }]}>
-          <View style={[styles.chipRow, wrap]}>
-            <Button colors={colors} label={s.picked.includes(row.key) ? "Selected" : "Select"} kind={s.picked.includes(row.key) ? "primary" : "ghost"} disabled={disabled || !bindable(row)} onPress={() => s.pickProject(row.key, !s.picked.includes(row.key))} />
-            <Text style={[styles.roleTitle, { color: colors.foreground }]} selectable>{row.name}</Text>
-            <Badge colors={colors} label={STATE_LABEL[row.state]} tone={row.state === "bound" ? "good" : row.state === "pending" ? "draft" : row.state === "blocked" ? "bad" : "neutral"} />
-            {row.localOnly ? <Badge colors={colors} label="Local only" tone="managed" /> : null}
-            {row.linked ? <Badge colors={colors} label="Worktree" tone="neutral" /> : null}
-            {row.changed ? <Badge colors={colors} label="Changed in draft" tone="draft" /> : null}
-            {drifted(row) ? <Badge colors={colors} label="Identity drift" tone="bad" /> : null}
-            {row.identity && row.identity.state !== "ok" ? <Badge colors={colors} label="Git identity differs" tone="bad" /> : null}
-          </View>
-          <KV colors={colors} label="Client" value={row.draftClient ?? row.client ?? "none"} />
-          {row.paths.length > 1 ? <KV colors={colors} label="Worktrees" value={String(row.paths.length)} /> : null}
-          {row.reason ? <Text style={[styles.mutedSmall, { color: colors.statusWarning }]} selectable>{row.reason}</Text> : null}
-          {row.identity && row.identity.state !== "ok" ? (
-            <View style={styles.field}>
-              <KV colors={colors} label="Git identity" value={row.identity.state} />
-              <Text style={[styles.mutedSmall, { color: colors.statusWarning }]} selectable>{`Rule: ${row.identity.expected.name} <${row.identity.expected.email}>`}</Text>
-              <Text style={[styles.mutedSmall, { color: colors.statusWarning }]} selectable>{`in Git: ${row.identity.effective.name ?? "unset"} <${row.identity.effective.email ?? "unset"}>`}</Text>
-              <Text style={[styles.mutedSmall, { color: colors.foregroundMuted }]}>Read-only warning; nothing is changed.</Text>
+      {groups.map(group => (
+        <View key={group.id} style={styles.field}>
+          {group.rows.length > 1 ? (
+            <View style={[styles.chipRow, wrap]}>
+              <Text style={[styles.fieldLabel, { color: colors.foreground }]} selectable>{group.label}</Text>
+              <Badge colors={colors} label={`${group.rows.length} repositories`} tone="neutral" />
             </View>
           ) : null}
-          {drifted(row) ? (
-            <View style={[styles.confirmBox, { borderColor: colors.border }]}>
-              <Text style={[styles.mutedSmall, { color: colors.statusWarning }]}>Binding does not re-fix a repository whose identity drifted. Accepting the new identity is a separate step and the review lists it.</Text>
-              {s.proposed === row.key && s.identityChange(row.key) ? (
-                <>
-                  <KV colors={colors} label="Saved identity" value={shortOrigin(s.identityChange(row.key)!.from)} />
-                  <KV colors={colors} label="New identity" value={shortOrigin(s.identityChange(row.key)!.to)} />
-                  <View style={[styles.chipRow, wrap]}>
-                    <Button colors={colors} label="Confirm the new identity" kind="primary" disabled={disabled} onPress={() => s.acceptIdentity(row.key)} />
-                    <Button colors={colors} label="Cancel" disabled={disabled} onPress={s.cancelIdentity} />
-                  </View>
-                </>
-              ) : <Button colors={colors} label="Accept the new identity" disabled={disabled} onPress={() => s.proposeIdentity(row.key)} />}
+          {group.rows.map(row => (
+            <View key={row.key} style={[styles.roleBox, { borderColor: s.picked.includes(row.key) ? colors.accent : colors.border }]}>
+              <View style={[styles.chipRow, wrap]}>
+                <Button colors={colors} label={s.picked.includes(row.key) ? "Selected" : "Select"} kind={s.picked.includes(row.key) ? "primary" : "ghost"} disabled={disabled || !s.canBind(row)} onPress={() => s.pickProject(row.key, !s.picked.includes(row.key))} />
+                <Text style={[styles.roleTitle, { color: colors.foreground }]} selectable>{group.rows.length > 1 ? row.repoName : row.name}</Text>
+                <Badge colors={colors} label={STATE_LABEL[row.state]} tone={row.state === "bound" ? "good" : row.state === "pending" ? "draft" : row.state === "blocked" ? "bad" : "neutral"} />
+                {row.localOnly ? <Badge colors={colors} label="Local only" tone="managed" /> : null}
+                {row.changed ? <Badge colors={colors} label="Changed in draft" tone="draft" /> : null}
+                {drifted(row) ? <Badge colors={colors} label="Identity drift" tone="bad" /> : null}
+                {row.identity && row.identity.state !== "ok" ? <Badge colors={colors} label="Git identity differs" tone="bad" /> : null}
+                {row.suggestedClient !== null && row.draftClient === null ? <Badge colors={colors} label={`Suggested client: ${row.suggestedClient}`} tone="managed" /> : null}
+              </View>
+              <KV colors={colors} label="Workspaces" value={String(row.workspaceCount)} />
+              {row.mainPath ? <KV colors={colors} label={row.kind === "folder" ? "Project folder" : "Main checkout"} value={row.mainPath} /> : null}
+              {row.kind === "folder" ? <Badge colors={colors} label="Folder without Git" tone="neutral" /> : null}
+              {row.kind === "folder" && row.containerBlocked === null && !s.containerOk ? <Text style={[styles.mutedSmall, { color: colors.statusWarning }]} selectable>{s.data?.containerWrites?.reason ?? "Containers cannot be saved yet."}</Text> : null}
+              {row.kind === "folder" && s.coversOf(row) > 0 && !s.coverOk.includes(row.key) && row.draftClient === null ? (
+                <View style={[styles.confirmBox, { borderColor: colors.border }]}>
+                  <Text style={[styles.mutedSmall, { color: colors.statusWarning }]}>{`This folder contains ${s.coversOf(row)} other project(s). It binds only non-Git directories; Git repositories inside keep their own binding.`}</Text>
+                  <Button colors={colors} label="Confirm that this folder covers them" disabled={disabled || !s.canBind(row)} onPress={() => s.confirmCover(row.key)} />
+                </View>
+              ) : null}
+              <KV colors={colors} label="Client" value={row.draftClient ?? row.client ?? "none"} />
+              {row.projects.length > 1 ? <Text style={[styles.mutedSmall, { color: colors.statusWarning }]} selectable>{`Duplicate projects for one repository: ${row.projects.map(project => project.label).join(" | ")}. One binding covers them all.`}</Text> : null}
+              {row.reason ? <Text style={[styles.mutedSmall, { color: colors.statusWarning }]} selectable>{row.reason}</Text> : null}
+              {row.identity && row.identity.state !== "ok" ? (
+                <View style={styles.field}>
+                  <KV colors={colors} label="Git identity" value={row.identity.state} />
+                  <Text style={[styles.mutedSmall, { color: colors.statusWarning }]} selectable>{`Rule: ${row.identity.expected.name} <${row.identity.expected.email}>`}</Text>
+                  <Text style={[styles.mutedSmall, { color: colors.statusWarning }]} selectable>{`in Git: ${row.identity.effective.name ?? "unset"} <${row.identity.effective.email ?? "unset"}>`}</Text>
+                  <Text style={[styles.mutedSmall, { color: colors.foregroundMuted }]}>Read-only warning; nothing is changed.</Text>
+                </View>
+              ) : null}
+              {drifted(row) ? (
+                <View style={[styles.confirmBox, { borderColor: colors.border }]}>
+                  <Text style={[styles.mutedSmall, { color: colors.statusWarning }]}>Binding does not re-fix a repository whose identity drifted. Accepting the new identity is a separate step and the review lists it.</Text>
+                  {s.proposed === row.key && s.identityChange(row.key) ? (
+                    <>
+                      <KV colors={colors} label="Saved identity" value={shortOrigin(s.identityChange(row.key)!.from)} />
+                      <KV colors={colors} label="New identity" value={shortOrigin(s.identityChange(row.key)!.to)} />
+                      <View style={[styles.chipRow, wrap]}>
+                        <Button colors={colors} label="Confirm the new identity" kind="primary" disabled={disabled} onPress={() => s.acceptIdentity(row.key)} />
+                        <Button colors={colors} label="Cancel" disabled={disabled} onPress={s.cancelIdentity} />
+                      </View>
+                    </>
+                  ) : <Button colors={colors} label="Accept the new identity" disabled={disabled} onPress={() => s.proposeIdentity(row.key)} />}
+                </View>
+              ) : null}
+              <View style={[styles.chipRow, wrap]}>
+                {row.suggestedClient !== null ? <Button colors={colors} label={`Bind to ${row.suggestedClient}`} disabled={disabled || !s.canBind(row)} onPress={() => s.bindProjects([row.key], row.suggestedClient)} /> : null}
+                <Button colors={colors} label="Bind to the chosen client" disabled={disabled || s.bindTo === null || !s.canBind(row)} onPress={() => s.bindProjects([row.key], s.bindTo)} />
+                <Button colors={colors} label="Remove binding from the draft" kind="danger" disabled={disabled || row.draftClient === null} onPress={() => s.unbindProject(row.key)} />
+              </View>
             </View>
-          ) : null}
-          <View style={[styles.chipRow, wrap]}>
-            <Button colors={colors} label="Bind to the chosen client" disabled={disabled || s.bindTo === null || !bindable(row)} onPress={() => s.bindProjects([row.key], s.bindTo)} />
-            <Button colors={colors} label="Remove binding from the draft" kind="danger" disabled={disabled || row.draftClient === null} onPress={() => s.unbindProject(row.key)} />
-          </View>
+          ))}
         </View>
       ))}
     </View>
@@ -607,11 +693,11 @@ export function ClientsCard({ colors, compact, state, poolSlot }: {
           ))}
           <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Add a repository</Text>
           <Text style={[styles.mutedSmall, { color: colors.foregroundMuted }]}>The server reads the common dir and the origin hash from Git; you never type them.</Text>
-          <Button colors={colors} label="Load Paseo workspaces" disabled={disabled} onPress={s.loadWorkspaces} />
+          <Button colors={colors} label="Load Paseo projects" disabled={disabled} onPress={s.loadWorkspaces} />
           {(s.workspaces ?? []).map(workspace => (
             <View key={workspace.id} style={[styles.chipRow, wrap]}>
-              <Text style={[styles.mutedSmall, { color: colors.foreground }]} selectable>{workspace.name}</Text>
-              <Button colors={colors} label="Use this workspace" disabled={disabled} onPress={() => { setPath(workspace.directory); void s.identify(workspace.directory); }} />
+              <Text style={[styles.mutedSmall, { color: colors.foreground }]} selectable>{workspace.projectLabel ?? workspace.name}</Text>
+              <Button colors={colors} label="Use this project" disabled={disabled} onPress={() => { setPath(workspace.directory); void s.identify(workspace.directory); }} />
             </View>
           ))}
           <Field colors={colors} label="Repository folder" placeholder="/absolute/path/to/repository" value={path} onChangeText={setPath} disabled={disabled} />
