@@ -769,6 +769,17 @@ explicit CAPABILITY_GAP in formation and in `task deliver` whenever the map decl
 containers. Install the new runtime before saving the first container: an already
 installed older runtime would read a map with `containers` as invalid.
 
+**Company context (`~/.config/equipes/companies.json`): `instructions` is optional.** The
+`agent.create.before` company context is built from the verified binding (company/project),
+the cross-company isolation notice and `sourceNotes` (pointers to read). `companies.<name>.instructions`
+may be absent, empty or whitespace-only: the context then carries no extra rules text (the rules
+live in the Cérebro and the central map, not duplicated here). When present it must be a string of
+at most 2200 characters and is appended. Any other type, including an explicit `null`, is invalid
+(`company policy is missing or invalid`). `sourceNotes` stays mandatory (array of strings, each at
+most 240). Every identity check is unchanged: registry, protected roots, unique Git common-dir,
+origin-hash drift, non-Git folders under a protected root, client container folders. See
+`docs/decisions/2026-11-06-company-instructions-optional.md`.
+
 **A degraded Git repository is never "a plain folder".** Git answers "not a git repository"
 for a repository whose `.git/HEAD` is missing or corrupt, for a linked worktree whose main
 checkout moved and for an unreadable `.git`. Before a directory inherits a container, every

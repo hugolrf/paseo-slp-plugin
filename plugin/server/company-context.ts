@@ -5,7 +5,7 @@ import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 type Project = { company: string; project: string; gitCommonDir: string; originSha256: string };
-type Policy = { instructions: string; sourceNotes: string[] };
+type Policy = { instructions?: string; sourceNotes: string[] };
 type Manifest = { version: 1; protectedRoots: string[]; companies: Record<string, Policy>; projects: Project[] };
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
 const canonical = (value: string) => {
@@ -74,17 +74,22 @@ export function companyContextForCwd(cwd: string | undefined,
   return render(project.company, project.project, registry.companies[project.company]);
 }
 function render(company: string, projectName: string, policy: Policy | undefined): string {
-  if (!policy || typeof policy.instructions !== "string" ||
-    !policy.instructions.trim() || policy.instructions.length > 2200 ||
+  // `instructions` is optional: rules may live only in the Cérebro, referenced
+  // by sourceNotes. Absent (undefined) is fine; any non-string (including null)
+  // or an oversized string is invalid. Empty/whitespace means "no extra text".
+  if (!policy || typeof policy !== "object" ||
+    (policy.instructions !== undefined &&
+      (typeof policy.instructions !== "string" || policy.instructions.length > 2200)) ||
     !Array.isArray(policy.sourceNotes) ||
     policy.sourceNotes.some(note => typeof note !== "string" || note.length > 240)) {
     throw new Error("Equipes: company policy is missing or invalid");
   }
+  const extra = policy.instructions?.trim();
   return [
     "\n## Contexto empresarial obrigatório: " + company + " / " + projectName,
     "Vínculo verificado pelo Git common-dir e hash da origem; nunca herdar políticas, cota, fallback ou credenciais de outra empresa.",
     "As notas são fontes de contexto a verificar; não substituem reserva exclusiva da tarefa nem autorizações de ações externas.",
-    policy.instructions.trim(),
+    ...(extra ? [extra] : []),
     "Antes de modificar código corporativo, conferir origem da tarefa e reserva válida do controlador; sem evidência, BLOCKED.",
     "QA exige E2E efetivamente executado, candidato pinado e evidências com hashes no destino externo autorizado. Sem prova, NOT_HOMOLOGATED.",
     "Notas do Cérebro desta empresa (não abrir notas de outras empresas): " + policy.sourceNotes.join("; "),
