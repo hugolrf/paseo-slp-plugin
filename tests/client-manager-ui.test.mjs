@@ -226,7 +226,7 @@ for (const family of FAMILY_IDS) {
       assert.ok(rig.calls.some(call => call.name === 'catalog' && call.input.family === family && call.input.role === role));
     }
     assert.ok(!rig.calls.some(call => ['activate', 'set-role-routing'].includes(call.name)));
-    assert.match(JSON.stringify(rig.renderer.toJSON()), /no Maintenance step is needed/);
+    assert.match(JSON.stringify(rig.renderer.toJSON()), /no Maintenance step is needed|não é preciso passar por Manutenção/);
   });
 }
 
