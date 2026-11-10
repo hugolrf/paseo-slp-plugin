@@ -8,17 +8,17 @@
 // share one host session; drafts remain mounted while sections change.
 // Target paths and authority acknowledgments never enter screen params.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useRpc } from "@getpaseo/plugin/client";
+import { usePaseo, useRpc } from "@getpaseo/plugin/client";
 import { Modal } from "@getpaseo/plugin/client/react-native";
 import type { PluginScreenProps } from "@getpaseo/plugin/client";
 import type { PluginTheme } from "@getpaseo/plugin";
 import {
   Pressable,
   ScrollView,
-  Text,
   View,
 } from "react-native";
-import { activate, catalog, deactivate, reconcile, status, localTarget, setLanguage, getRoleRouting, setRoleRouting, getJev, setJev, setJevKey, testJev, getPeerPool, setPeerPool } from "../shared/contracts.ts";
+import { ptBR, Text } from "./pt-br.ts";
+import { activate, catalog, deactivate, reconcile, status, localTarget, setLanguage, getRoleRouting, setRoleRouting, getJev, setJev, setJevKey, testJev, getPeerPool, setPeerPool, getClients, getClientFiles, validateClientsDraft, identifyRepository, listClientProjects, explainResolution, setClients, setClientPool, setClientProtocol } from "../shared/contracts.ts";
 import { getSupervision, setSupervision } from "../shared/supervision.ts";
 import { FAMILY_IDS, FAMILY_LABEL, FAMILY_PICKER_ORDER } from "../shared/runtime/families.ts";
 import type { RoleName } from "../shared/runtime/families.ts";
@@ -89,6 +89,8 @@ import { useLanguageCard } from "./cards/language.ts";
 import { useRoutingCard, RoutingCard } from "./cards/routing.tsx";
 import { useJevCard, JevCard, JEV_KIND_DEFAULT, JEV_KIND_LABEL } from "./cards/jev.tsx";
 import { usePeerPoolCard, PeerPoolCard } from "./cards/peer-pool.tsx";
+import { ClientsCard, useClientsCard, workspaceOfEntry } from "./cards/clients.tsx";
+import { ClientPoolSession } from "./cards/client-pool.tsx";
 import { useSupervisionCard, SupervisionCard } from "./cards/supervision.tsx";
 
 // Family knowledge derives from the shared registry (shared/runtime/families.ts):
@@ -144,6 +146,16 @@ function ManagerSession({ host, layout, theme, navigation, params = {}, onSectio
   const callTestJev = useRpc(testJev);
   const callGetPeerPool = useRpc(getPeerPool);
   const callSetPeerPool = useRpc(setPeerPool);
+  const callGetClients = useRpc(getClients);
+  const callGetClientFiles = useRpc(getClientFiles);
+  const callValidateClients = useRpc(validateClientsDraft);
+  const callIdentify = useRpc(identifyRepository);
+  const callListProjects = useRpc(listClientProjects);
+  const callExplain = useRpc(explainResolution);
+  const callSetClients = useRpc(setClients);
+  const callSetClientPool = useRpc(setClientPool);
+  const callSetClientProtocol = useRpc(setClientProtocol);
+  const paseoApi = usePaseo();
   const callGetSupervision = useRpc(getSupervision);
   const callSetSupervision = useRpc(setSupervision);
 
@@ -356,6 +368,18 @@ function ManagerSession({ host, layout, theme, navigation, params = {}, onSectio
     scrollFocusNode,
     update,
   });
+
+  // "Clientes": the central client map. The map/protocol/diagnosis state lives
+  // in cards/clients.tsx; the selected client's pool is the same Peer pool
+  // editor mounted through adapters, so a client's pool never mixes with the
+  // user pool or another client's (its snapshot is keyed by target + client).
+  const clientsApi = {
+    getClients: callGetClients, getClientFiles: callGetClientFiles, validate: callValidateClients,
+    identify: callIdentify, listProjects: callListProjects, explain: callExplain, setClients: callSetClients,
+    setClientPool: callSetClientPool, setClientProtocol: callSetClientProtocol,
+    listWorkspaces: async () => (await paseoApi.workspaces.list()).entries.flatMap(workspaceOfEntry),
+  };
+  const clients = useClientsCard({ target, targetKey: key, api: clientsApi, update });
 
   // The supervision card owns the config snapshot, draft (which Leads, what
   // happens on a finding, thresholds), agent pickers, CAS save/reload and
@@ -592,7 +616,7 @@ function ManagerSession({ host, layout, theme, navigation, params = {}, onSectio
     void runOperation(() => callDeactivate(input), input.operationId);
   };
 
-  const headerSubtitle = `${statusFresh ? "Runtime and work settings" : view.lastError ? "Runtime read unavailable" : statusView ? "Updating saved view" : "Reading runtime"} on ${host.label}`;
+  const headerSubtitle = `${statusFresh ? "Configurações de runtime e trabalho" : view.lastError ? "Leitura do runtime indisponível" : statusView ? "Atualizando visão salva" : "Lendo runtime"} em ${host.label}`;
   return (
     <ScrollView
       style={{ backgroundColor: colors.surface0 }}
@@ -600,9 +624,9 @@ function ManagerSession({ host, layout, theme, navigation, params = {}, onSectio
     >
       <View style={styles.headerRow}>
         <View style={{ flex: 1, gap: 4 }}>
-          <Text style={[styles.pageTitle, { color: colors.foreground }]}>SLP</Text>
+          <Text style={[styles.pageTitle, { color: colors.foreground }]}>Equipes</Text>
           <Text numberOfLines={1} ellipsizeMode="tail" accessibilityLiveRegion="polite"
-            accessibilityLabel={headerSubtitle} accessibilityHint={!statusFresh ? "Writes wait for a fresh read." : undefined}
+            accessibilityLabel={ptBR(headerSubtitle)} accessibilityHint={!statusFresh ? ptBR("Writes wait for a fresh read.") : undefined}
             style={[styles.muted, { color: colors.foregroundMuted }]}>
             {headerSubtitle}
           </Text>
@@ -644,7 +668,7 @@ function ManagerSession({ host, layout, theme, navigation, params = {}, onSectio
 
       {params.section && !MANAGER_SECTIONS.some(section => section.id === params.section) ?
         <Text style={[styles.mutedSmall, { color: colors.statusWarning }]}>Unknown section. Showing Overview.</Text> : null}
-      {compact ? <SettingsSelect label="SLP section" value={activeSection}
+      {compact ? <SettingsSelect label="Seção Equipes" value={activeSection}
         options={MANAGER_SECTIONS.map(section => ({ label: section.label, value: section.id }))}
         onValueChange={setActiveSection} /> : null}
           <View style={compact ? { display: "none" } : undefined}><View role="tablist" accessibilityLabel="Manager sections" style={styles.navStrip}>
@@ -655,7 +679,7 @@ function ManagerSession({ host, layout, theme, navigation, params = {}, onSectio
                   key={section.id}
                   onPress={() => setActiveSection(section.id)}
                   accessibilityRole="tab"
-                  accessibilityLabel={`${section.label} tab`}
+                  accessibilityLabel={`${section.label} · aba`}
                   accessibilityState={{ selected: active }}
                   style={(state: ControlState) => [
                     styles.navItem,
@@ -786,7 +810,7 @@ function ManagerSession({ host, layout, theme, navigation, params = {}, onSectio
         <KV colors={colors} label="Profiles" value={routing.saved ? saveApplyBusy || view.pending ? view.pending?.uncertain ? "Saved; Apply outcome unconfirmed" : "Saved; Apply operation in progress" : "Saved; inspect latest Apply result" : routing.dirty ? "Unsaved draft" : routing.diverged ? "Saved profiles differ from binding" : "Inspect Profiles for saved and applied settings"} />
         <KV colors={colors} label="Peer pool" value={pool.poolReadError ? "Read unavailable" : pool.poolDirty ? "Unsaved draft" : pool.poolData?.error ? "Pool unavailable" : pool.poolData ? pool.poolData.pool ? "Saved pool; read at next formation" : "No saved pool" : "Awaiting pool read"} />
         <KV colors={colors} label="Jev" value={jevSummary(jev.view, jev.loadError, { dirty: jev.dirty, saved: jev.saved })} />
-        <View style={styles.chipRow}>{MANAGER_SECTIONS.filter(section => section.id !== "overview" && section.id !== "maintenance").map(section => <Button key={section.id} colors={colors} label={`Open ${section.label.toLowerCase()}`} onPress={() => setActiveSection(section.id)} />)}</View>
+        <View style={styles.chipRow}>{MANAGER_SECTIONS.filter(section => section.id !== "overview" && section.id !== "maintenance").map(section => <Button key={section.id} colors={colors} label={`Abrir ${section.label.toLowerCase()}`} onPress={() => setActiveSection(section.id)} />)}</View>
       </Card></View>
 
       {/* Keep the Profiles frame mounted while the first read is pending. */}
@@ -827,6 +851,34 @@ function ManagerSession({ host, layout, theme, navigation, params = {}, onSectio
           retryCatalog={retryCatalog}
           retryFeatureSet={retryFeatureSet}
           scrollFocusNode={scrollFocusNode}
+        />
+        </View>
+      ) : null}
+
+      {target ? (
+        <View style={sectionShown("clients")}>
+        <ClientsCard
+          colors={colors}
+          compact={compact}
+          state={clients}
+          poolSlot={target && key ? clients.opened.map(client => (
+            <ClientPoolSession
+              key={`${key}|${client}`}
+              colors={colors}
+              compact={compact}
+              active={clients.selected === client}
+              client={client}
+              target={target}
+              targetKey={key}
+              adapters={clients.poolAdaptersFor(client)}
+              cache={cache}
+              statusView={statusView}
+              jev={jev}
+              availableFamilies={availableFamilies}
+              scrollFocusNode={scrollFocusNode}
+              update={update}
+            />
+          )) : null}
         />
         </View>
       ) : null}

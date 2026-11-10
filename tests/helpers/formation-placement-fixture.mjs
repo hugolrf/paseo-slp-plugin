@@ -15,8 +15,15 @@ export function committedRepository(cwd) {
  return realpathSync(join(cwd,'.git'));
 }
 const gitCommonDirOf=cwd=>realpathSync(resolve(cwd,fixtureGit(cwd,'rev-parse','--git-common-dir')));
-export function placementFixture(t,{mode='off',count=1,registration='ready',budgets,role='peer',callerRole='lead',git}={}) {
+export function placementFixture(t,{mode='off',count=1,registration='ready',budgets,role='peer',callerRole='lead',git,placementHome}={}) {
  const f=selectionFixture(t,{mode,count});
+ // placementHome omitted: the placement gets paseoHome explicitly. 'env' or a path: it gets NO paseoHome
+ // (the real desk-bridge wiring) and resolves PASEO_HOME, which this fixture points at f.home / that path.
+ let homeDep={paseoHome:f.home};
+ if(placementHome!==undefined){
+  const previous=process.env.PASEO_HOME;process.env.PASEO_HOME=placementHome==='env'?f.home:placementHome;homeDep={};
+  t.after(()=>{if(previous===undefined)delete process.env.PASEO_HOME;else process.env.PASEO_HOME=previous;});
+ }
  const commonDir=committedRepository(f.repository),target=join(f.dir,'target');
  // Fixture prerequisite only; the product never calls Git worktree add or host setup.
  fixtureGit(f.repository,'worktree','add','--detach',target,'HEAD');
@@ -61,7 +68,7 @@ export function placementFixture(t,{mode='off',count=1,registration='ready',budg
  const planner=createFormationPlanner({runtimePath:candidate,daemonHome:f.home,host:()=>host,
   importModule:async spec=>{const launch=await import(spec);return {...launch,
    selectPeerSeat:(request,deps)=>launch.selectPeerSeat(request,{...deps,decide:f.decide})};}});
- const placement=createFormationPlacement({repo:{gitCommonDir:commonDir},host:()=>workspaceApi,budgets,...(git?{git}:{})});
+ const placement=createFormationPlacement({repo:{gitCommonDir:commonDir},host:()=>workspaceApi,...homeDep,budgets,...(git?{git}:{})});
  const deps={stableRoot:join(f.home,'slp-runtime'),repoKey:'repo',host:()=>host,plan:planner,
   placement,placementCapability:planner.placementCapability,preflightPeer:planner.preflightPeer,selectPeer:planner.selectPeer,
   readMemberships:gitCommonDir=>gitCommonDir===foreignCommonDir?foreignMembers:members,membershipWaitMs:30,guard:async()=>null};

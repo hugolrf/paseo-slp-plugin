@@ -7,7 +7,7 @@ import { deliveryTimelineItem } from "./server/delivered-input.ts";
 import type { PluginServerContribution } from "@getpaseo/plugin/server";
 import { realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { activate, reconcile, deactivate, status, localTarget, catalog, setLanguage, getRoleRouting, setRoleRouting, getPeerPool, setPeerPool, getJev, setJev, setJevKey, testJev } from "./shared/contracts.ts";
+import { activate, reconcile, deactivate, status, localTarget, catalog, setLanguage, getRoleRouting, setRoleRouting, getPeerPool, setPeerPool, getClients, getClientFiles, validateClientsDraft, identifyRepository, listClientProjects, explainResolution, setClients, setClientPool, setClientProtocol, getJev, setJev, setJevKey, testJev } from "./shared/contracts.ts";
 import { disableSupervisionNotifications, getSupervision, getSupervisionStatus, setSupervision } from "./shared/supervision.ts";
 import { enforcementStatus, enforcementRecoverLock, enforcementRuntimePin } from "./shared/enforcement.ts";
 import type { Manager } from "./shared/contracts.ts";
@@ -15,6 +15,8 @@ import { loadCatalog } from "./server/provider-catalog.ts";
 import { createManager } from "./server/manager.ts";
 import { createJev } from "./server/jev.ts";
 import { createStateStore } from "./server/state-store.ts";
+import { createClientsStore } from "./server/clients-store.ts";
+import { createRuntimeCapabilities } from "./server/runtime-capabilities.ts";
 import { createSupervisionState } from "./server/supervision/state.ts";
 import { createSupervisionObserver, type SupervisionObserver } from "./server/supervision/observer.ts";
 import { detectDaemonHome, resolveDaemonHome } from "./server/daemon-home.ts";
@@ -26,12 +28,14 @@ import { createExecutableResolver } from "./server/executables.ts";
 import { createLauncherBuilder } from "./server/launchers.ts";
 import { createJournal } from "./server/journal.ts";
 import { createRoleInjection } from "./server/role-injection.ts";
+import { companyContextForCwd } from "./server/company-context.ts";
+import { clientContextForCwd } from "./server/client-context.ts";
 import { createEnforcement } from "./server/enforcement.ts";
 import { recoverLockView } from "./server/desk-recovery.ts";
 import { readRuntimePinView } from "./server/runtime-pin.ts";
 import { createDeskBridge } from "./server/desk-bridge.ts";
-import { getWorkspaceWorkflow } from "./shared/workflow-view.ts";
-import { readWorkspaceWorkflow } from "./server/workflow-view.ts";
+import { getWorkspaceWorkflow, startWorkspaceTeam } from "./shared/workflow-view.ts";
+import { readWorkspaceWorkflow, startManagedWorkspaceTeam } from "./server/workflow-view.ts";
 import type { TaskHostApi } from "./server/desk-task-execution-host.ts";
 import type { TaskRuntimeApi } from "./server/desk-task-runtime.ts";
 import type { FormationWorkspaceApi } from "./server/desk-placement.ts";
@@ -64,6 +68,11 @@ export default function contribute(server: Parameters<PluginServerContribution>[
     deskBridge.noteDispatch(paseo);
     return readWorkspaceWorkflow(input, paseo);
   });
+  server.handle(startWorkspaceTeam, (input, { paseo }) => {
+    noteTaskApi(paseo);
+    deskBridge.noteDispatch(paseo);
+    return startManagedWorkspaceTeam(input, paseo);
+  });
   server.handle(catalog, (input, { paseo }) => loadCatalog(input, paseo));
   // Plugin-owned state files under slp-runtime/state — same class of
   // operation as jev: no journal, no mutex, no authority gate.
@@ -73,6 +82,28 @@ export default function contribute(server: Parameters<PluginServerContribution>[
   server.handle(setRoleRouting, input => store.setRoleRouting(input));
   server.handle(getPeerPool, input => store.getPeerPool(input));
   server.handle(setPeerPool, input => store.setPeerPool(input));
+  // Central client map ("Clientes" screen). Reads/validation/diagnosis, then the
+  // three writes (map, client pool, client protocol): plugin-only RPCs with CAS,
+  // a `confirm` token and an audit line. Like every RPC here they are reachable
+  // by any local process through the daemon's plugin.rpc.invoke (host gap); no
+  // Desk tool or slp.mjs command exposes them (tests prove the import graph).
+  // The screen saves version-2 features (containers) only when the bound, verified runtime declares them. `journal`
+  // and `materializer` exist by the time this is called (late-bound closures).
+  const clients = createClientsStore({
+    runtimeCapabilities: createRuntimeCapabilities({
+      readActiveBinding: () => readActiveBinding(journal),
+      verify: binding => materializer.verifyPublished(binding.runtimePath, binding.candidateSha256, binding.payloadSha256),
+    }),
+  });
+  server.handle(getClients, input => clients.getClients(input));
+  server.handle(getClientFiles, input => clients.getClientFiles(input));
+  server.handle(validateClientsDraft, input => clients.validateClientsDraft(input));
+  server.handle(identifyRepository, input => clients.identifyRepository(input));
+  server.handle(listClientProjects, input => clients.listClientProjects(input));
+  server.handle(explainResolution, input => clients.explainResolution(input));
+  server.handle(setClients, input => clients.setClients(input));
+  server.handle(setClientPool, input => clients.setClientPool(input));
+  server.handle(setClientProtocol, input => clients.setClientProtocol(input));
   // Jev (OpenRouter Decisions) — per-daemon config/key under slp-runtime/state;
   // test-jev is the only handler that touches the network (explicit action).
   const jev = createJev();
@@ -176,6 +207,9 @@ export default function contribute(server: Parameters<PluginServerContribution>[
     stableRoot: join(realpathSync(detectDaemonHome().daemonHome), "slp-runtime"),
   });
   const injection = createRoleInjection({
+    companyContext: companyContextForCwd,
+    // Central client map: strict binding + the client's rules, read at every create (never cached).
+    clientContext: cwd => clientContextForCwd(cwd, detectDaemonHome().daemonHome),
     readActiveBinding: () => readActiveBinding(journal),
     // O1: the create-hook re-verifies the published candidate (cached once
     // per sha) before importing its role bundle — same verifyPublished the

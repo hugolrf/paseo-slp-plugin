@@ -5,7 +5,8 @@ import { freshPresetPoolForm, presetMigrationForm } from "../manager-state.ts";
 // this card's draft and transient state. The shell supplies RPC adapters,
 // shared catalog read views, scroll/focus and target-bound lastError plumbing.
 import { useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
+import { Text } from "../pt-br.ts";
 import { useTargetSnapshot } from "../target-async.ts";
 import { copyText } from "@getpaseo/plugin/client/react-native";
 import { PEER_SEAT_ARCHETYPES } from "../../shared/archetypes.ts";
@@ -616,7 +617,9 @@ export function usePeerPoolCard({ target, targetKey, isCurrentKey, callGetPeerPo
 
 export type PeerPoolCardState = ReturnType<typeof usePeerPoolCard>;
 
-export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, availableFamilies, catalogs, catalogLoadingFor, retryCatalog, retryFeatureSet, scrollFocusNode }: {
+export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, availableFamilies, catalogs, catalogLoadingFor, retryCatalog, retryFeatureSet, scrollFocusNode, heading }: {
+  /** Replaces the card title/subtitle when the editor is mounted for a client pool. */
+  heading?: { title: string; subtitle: string };
   colors: Colors;
   target: TargetValue | null;
   compact: boolean;
@@ -630,7 +633,7 @@ export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, a
   retryFeatureSet: (key: string) => Promise<unknown>;
   scrollFocusNode: (node: unknown, focus?: boolean) => void;
 }) {
-  if (pool.poolForm.version === 2) return <PresetPoolCard colors={colors} pool={pool} availableFamilies={availableFamilies} catalogs={catalogs} retryCatalog={retryCatalog} retryFeatureSet={retryFeatureSet} />;
+  if (pool.poolForm.version === 2) return <PresetPoolCard colors={colors} pool={pool} availableFamilies={availableFamilies} catalogs={catalogs} retryCatalog={retryCatalog} retryFeatureSet={retryFeatureSet} heading={heading} />;
   const {
     poolData,
     poolForm,
@@ -693,8 +696,8 @@ export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, a
   return (
         <Card
           colors={colors}
-          title="Peer pool"
-          subtitle="User-scope Peer seats. Bound desk selection is resolved server-side, or returns options for an independent Lead choice. Supervisor and Lead use their saved profiles."
+          title={heading?.title ?? "Peer pool"}
+          subtitle={heading?.subtitle ?? "User-scope Peer seats. Bound desk selection is resolved server-side, or returns options for an independent Lead choice. Supervisor and Lead use their saved profiles."}
           // Draft-state badge beside the card title (mockup dirty-badge):
           // amber while edits are unsaved, else the saved/absent state.
           trailing={
@@ -744,7 +747,7 @@ export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, a
             </Text>
           ) : poolData.pool === null ? (
             <Text style={[styles.mutedSmall, { color: colors.foregroundMuted }]}>
-              No pool yet — add seats below, or import a legacy slp-routing.json.
+              {heading ? "No pool yet — add seats below." : "No pool yet — add seats below, or import a legacy slp-routing.json."}
             </Text>
           ) : null}
           {// Pool summary (mockup finding 7): the saved-state line plus the
@@ -756,8 +759,8 @@ export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, a
               <View style={[styles.cardHeadRow, { justifyContent: "space-between" }]}>
                 <Text style={[styles.checkTitle, { color: colors.foreground }]}>
                   {poolData.pool != null
-                    ? `Saved pool · ${poolForm.seats.length} seat${poolForm.seats.length === 1 ? "" : "s"} in draft`
-                    : `No saved pool — ${poolForm.seats.length} seat${poolForm.seats.length === 1 ? "" : "s"} in draft`}
+                    ? `Pool salvo · ${poolForm.seats.length} assento${poolForm.seats.length === 1 ? "" : "s"} no rascunho`
+                    : `Nenhum pool salvo — ${poolForm.seats.length} assento${poolForm.seats.length === 1 ? "" : "s"} no rascunho`}
                 </Text>
               </View>
               <View style={{ flexDirection: "row", gap: 14, flexWrap: "wrap" }}>
@@ -788,7 +791,7 @@ export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, a
                   <Button
                     key={entry.index}
                     colors={colors}
-                    label={`Open seat ${poolForm.seats[entry.index]?.id ?? ""}`}
+                    label={`Abrir assento ${poolForm.seats[entry.index]?.id ?? ""}`}
                     onPress={() => {
                       setOpenSeat(entry.index);
                       setTimeout(() => scrollFocusNode(seatRowRefs.current.get(entry.index), true), 50);
@@ -830,7 +833,7 @@ export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, a
                       ref={keepEditsRef}
                       onPress={() => setPoolReloadConfirm(null)}
                       accessibilityRole="button"
-                      accessibilityLabel="Keep current edits"
+                      accessibilityLabel="Manter edições atuais"
                       style={(state: ControlState) => [styles.button, { backgroundColor: colors.accent, borderColor: colors.accent }, state.hovered && { opacity: 0.88 }, state.focused && focusRing(colors), state.pressed && { opacity: 0.75 }]}
                     >
                       <Text style={[styles.buttonLabel, { color: colors.accentForeground }]}>Keep current edits</Text>
@@ -933,7 +936,7 @@ export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, a
                           ), 50);
                         }}
                         accessibilityRole="button"
-                        accessibilityLabel={`Define ${token}`}
+                        accessibilityLabel={`Definir ${token}`}
                         style={(state: ControlState) => [
                           { borderRadius: 4, paddingHorizontal: 2 },
                           state.hovered && { backgroundColor: colors.surface2 },
@@ -981,7 +984,7 @@ export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, a
                     onPress={() => setSeatEnabled(index)(!seat.enabled)}
                     disabled={disabled}
                     accessibilityRole="switch"
-                    accessibilityLabel={`Enable ${seat.id || "unnamed seat"} in draft`}
+                    accessibilityLabel={`Ativar ${seat.id || "assento sem nome"} no rascunho`}
                     accessibilityState={{ checked: seat.enabled, disabled }}
                     style={(state: ControlState) => [
                       styles.switchTrack,
@@ -1000,7 +1003,7 @@ export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, a
                   <Pressable
                     onPress={() => setOpenSeat(open ? null : index)}
                     accessibilityRole="button"
-                    accessibilityLabel={`${open ? "Close" : "Open"} editor for ${seat.id || "unnamed seat"}`}
+                    accessibilityLabel={`${open ? "Fechar" : "Abrir"} editor de ${seat.id || "assento sem nome"}`}
                     accessibilityState={{ expanded: open }}
                     style={(state: ControlState) => [
                       { flex: 1, gap: 2, borderRadius: 6, padding: 4, margin: -4 },
@@ -1540,7 +1543,7 @@ export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, a
                                     setTimeout(() => scrollFocusNode(definitionRefs.current.get(index), true), 50);
                                   }}
                                   accessibilityRole="button"
-                                  accessibilityLabel={`Define ${token.id}`}
+                                  accessibilityLabel={`Definir ${token.id}`}
                                   accessibilityState={{ selected: tokenLookupToken === token.id }}
                                   style={(state: ControlState) => [
                                     styles.chip,
@@ -1562,7 +1565,7 @@ export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, a
                             <View
                               ref={node => { definitionRefs.current.set(index, node); }}
                               role="region"
-                              accessibilityLabel={`Definition of ${tokenLookupToken}`}
+                              accessibilityLabel={`Definição de ${tokenLookupToken}`}
                               style={[styles.noticeBox, { borderColor: colors.border, backgroundColor: colors.surface0, gap: 2 }]}
                             >
                               <Text style={[styles.checkTitle, styles.mono, { color: colors.foreground }]}>{tokenLookupToken}</Text>
@@ -1657,7 +1660,7 @@ export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, a
             <View
               style={[styles.noticeBox, { borderColor: colors.accent, backgroundColor: colors.surface0 }]}
               role="region"
-              accessibilityLabel="Standard seat picker"
+              accessibilityLabel="Seletor de assento padrão"
             >
               <View style={[styles.cardHeadRow, { justifyContent: "space-between" }]}>
                 <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Add a standard seat</Text>
@@ -1755,7 +1758,7 @@ export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, a
               {poolBuild.seatIndex != null ? (
                 <Button
                   colors={colors}
-                  label={`Open seat ${poolForm.seats[poolBuild.seatIndex]?.id ?? ""}`}
+                  label={`Abrir assento ${poolForm.seats[poolBuild.seatIndex]?.id ?? ""}`}
                   onPress={() => setOpenSeat(poolBuild.seatIndex ?? null)}
                 />
               ) : null}
@@ -1817,7 +1820,7 @@ export function PeerPoolCard({ colors, target, compact, statusView, jev, pool, a
                     ref={keepEditsRef}
                     onPress={() => setPoolReloadConfirm(null)}
                     accessibilityRole="button"
-                    accessibilityLabel="Keep current edits"
+                    accessibilityLabel="Manter edições atuais"
                     style={(state: ControlState) => [styles.button, { backgroundColor: colors.accent, borderColor: colors.accent }, state.hovered && { opacity: 0.88 }, state.focused && focusRing(colors), state.pressed && { opacity: 0.75 }]}
                   >
                     <Text style={[styles.buttonLabel, { color: colors.accentForeground }]}>Keep current edits</Text>

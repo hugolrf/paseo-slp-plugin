@@ -2,7 +2,8 @@ import { observePeerReference, reobservePeerReference } from "./peer-reference.t
 // One ordinary/Lean invocation: fresh plan → durable issue → native create
 // without work → positive tuple observation → durable send (or caller handoff). No queue needed.
 import { pathToFileURL } from "node:url";
-import { join } from "node:path";
+import { realpathSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { candidateModulePath } from "./candidate-module.ts";
 import { canonicalSha256, profilesArray, readRawConfig } from "./config-view.ts";
 import { createDeskOperations, type OperationIdentity } from "./desk-operation.ts";
@@ -15,6 +16,7 @@ import type { DeskSeatCreateInputValue } from "../shared/delegation.ts";
 import type { MembershipValue } from "./desk-store.ts";
 import type { PeerSelectionRequest, SelectedPeer } from "./runtime/cli/seat-selection.ts";
 import type { TrustedLaunchContext } from "./runtime/cli/types.ts";
+import { mapHasContainers } from "./runtime/cli/clients.ts";
 import { FormationPlacementError, FormationPlacementUncertain, type FormationTargetPin, type FormationSourcePin, type createFormationPlacement } from "./desk-placement.ts";
 import { registeredMembership } from "./desk-membership.ts";
 import { DESK_FORMATION_REASONS, DESK_OPERATION_RETRY_RECOVERY } from "../shared/runtime/desk-contract.ts";
@@ -35,14 +37,23 @@ type FormationRequest = {
 };
 type FormationModule = {
   launchPlan(root: string, request: FormationRequest, context?: TrustedLaunchContext): Omit<Plan, "modeSupport">;
-  FORMATION_CAPABILITIES?: { existingPlacement?: number; peerPresets?: number };
+  FORMATION_CAPABILITIES?: { existingPlacement?: number; peerPresets?: number; centralClients?: number; clientBinding?: number; clientContainers?: number };
   peerSelectionNeedsCapabilities?: typeof import("./runtime/cli/seat-selection.ts").peerSelectionNeedsCapabilities;
   preflightPeerChoice?: typeof import("./runtime/cli/seat-selection.ts").preflightPeerChoice;
   selectPeerSeat?: typeof import("./runtime/cli/seat-selection.ts").selectPeerSeat;
   revalidatePeerSelection?: typeof import("./runtime/cli/seat-selection.ts").revalidatePeerSelection;
   verifyFormationCandidate?: (root: string) => unknown;
 };
-type SelectionContext = { selected?: SelectedPeer; target?: FormationTargetPin; sourceRepository?: string; source?: FormationSourcePin };
+// The receipt must say where a central pool came from: a selection or plan
+// whose scope is not central:<client> for a central pin is refused.
+const requireCentralProvenance = (pin: FormationSourcePin | undefined, scope: unknown, client: unknown) => {
+  if (pin?.central === undefined) return;
+  if (scope !== `central:${pin.central.client}` || (client !== undefined && client !== pin.central.client)) {
+    throw new FormationPlanningError("CAPABILITY_GAP", "central client source was not the source of the selected pool");
+  }
+};
+
+type SelectionContext = { selected?: SelectedPeer; target?: FormationTargetPin; sourceRepository?: string; source?: FormationSourcePin; centralPin?: FormationSourcePin };
 type PhaseWriter = (name: string, value: unknown) => void;
 const formationPin = (plan: Plan) => {
   const { labels: _metadata, ...create } = plan.create;
@@ -147,12 +158,39 @@ export function createFormationPlanner(deps: {
     try { launch.verifyFormationCandidate(deps.runtimePath); }
     catch { throw new FormationPlanningError("RUNTIME_INTEGRITY", "bound candidate bytes changed during placement"); }
   };
+  // A central client source needs a candidate that reads it the same way; an
+  // older one would read the client directory as a plain repository. The
+  // client directory must also live under the home this planner resolves with.
+  const requireCentral = (launch: FormationModule, context?: SelectionContext) => {
+    // A map with project-root containers (no Git) is unreadable to a candidate that predates them: say so, do not read it as "invalid".
+    if (launch.FORMATION_CAPABILITIES?.clientContainers !== 1 && mapHasContainers(deps.daemonHome)) {
+      throw new FormationPlanningError("CAPABILITY_GAP", "bound candidate lacks client containers (the client map declares them); refusing a divergent read");
+    }
+    const pins = [context?.target?.source, context?.source, context?.centralPin].filter((pin): pin is FormationSourcePin => pin !== undefined);
+    // A client binding (map version 2: strict, rules, local-only) is pinned and
+    // read by the candidate; one that predates it would read the map as invalid
+    // or ignore the rules, so it is refused instead of reading divergently.
+    if (pins.some(pin => pin.binding !== undefined) && launch.FORMATION_CAPABILITIES?.clientBinding !== 1) {
+      throw new FormationPlanningError("CAPABILITY_GAP", "bound candidate lacks client binding (map version 2); refusing a divergent read");
+    }
+    const pinned = pins.find(pin => pin.central !== undefined);
+    if (pinned === undefined) return;
+    if (launch.FORMATION_CAPABILITIES?.centralClients !== 1) {
+      throw new FormationPlanningError("CAPABILITY_GAP", "bound candidate lacks central client sources; refusing a divergent read");
+    }
+    const lexical = resolve(deps.daemonHome, "slp-clients", "clients");
+    let real = lexical; try { real = realpathSync(lexical); } catch { /* absent root fails the prefix test below */ }
+    if (![lexical, real].some(root => resolve(pinned.repository).startsWith(`${root}/`))) {
+      throw new FormationPlanningError("CAPABILITY_GAP", "central client source is outside this daemon home");
+    }
+  };
   const planner = async (row: MembershipValue, input: DeskSeatCreateInputValue, context?: SelectionContext): Promise<Plan> => {
     if (row.workspaceId === null && !context?.target) throw new FormationPlanningError("CAPABILITY_GAP", "formation requires an exact workspace");
     const host = deps.host();
     if (host === null) throw new FormationPlanningError("CAPABILITY_GAP", "connected host unavailable");
     const launch = await loadLaunch();
     if (context?.target || context?.source) requirePlacement(launch);
+    requireCentral(launch, context);
     const saved = () => profilesArray(readRawConfig(join(deps.daemonHome, "config.json")).json).value;
     let profiles: unknown[] | undefined;
     try { profiles = input.role === "lead" ? saved() : undefined; }
@@ -194,6 +232,7 @@ export function createFormationPlanner(deps: {
       }
       throw new FormationPlanningError("INVALID_RECORD", "fresh saved profile/pool/provider validation failed; inspect saved bundles and pool eligibility against the connected provider snapshot");
     }
+    if (input.role === "peer") requireCentralProvenance(context?.target?.source ?? context?.source, (planned.routing as { catalogScope?: unknown } | undefined)?.catalogScope, undefined);
     const separator = planned.create.provider.indexOf("/");
     if (separator <= 0) throw new FormationPlanningError("INVALID_RECORD", "fresh formation plan has no exact provider identity");
     const provider = planned.create.provider.slice(0, separator);
@@ -222,9 +261,28 @@ export function createFormationPlanner(deps: {
       };
     }
     if (planned.create.settings.modeId === undefined) {
-      throw new FormationPlanningError("CAPABILITY_GAP", "selected provider advertises permission modes but the saved profile has no resolved mode");
+      // Hugo explicitly authorized autonomous execution in Equipes. Resolve
+      // this narrowly for the managed Claude Lead only when the *exact*
+      // provider advertises its safety-classified Auto mode. Auto is NOT
+      // bypassPermissions: risky actions still require approval. Never
+      // silently select first, acceptEdits or bypass, and never inherit a
+      // different provider's mode catalog. Other providers fail closed.
+      if (input.role !== "lead" || provider !== "slp-claude-lead" || !modeIds.includes("auto")) {
+        throw new FormationPlanningError("CAPABILITY_GAP", "selected provider advertises permission modes but the saved profile has no resolved mode");
+      }
+      planned = {
+        ...planned,
+        create: {
+          ...planned.create,
+          settings: { ...planned.create.settings, modeId: "auto" },
+        },
+        warnings: [
+          ...(planned.warnings ?? []).filter(warning => !warning.startsWith("no modeId resolved (")),
+          "Claude Lead selected host-advertised safety-classified Auto mode; bypass and unsafe actions are not authorized.",
+        ],
+      };
     }
-    if (!modeIds.includes(planned.create.settings.modeId)) {
+    if (planned.create.settings.modeId === undefined || !modeIds.includes(planned.create.settings.modeId)) {
       throw new FormationPlanningError("INVALID_RECORD", "saved profile mode is absent from the fresh selected-provider snapshot");
     }
     return { ...planned, modeSupport: { provider, modes: modeIds } };
@@ -233,14 +291,14 @@ export function createFormationPlanner(deps: {
     placementCapability: async () => { requirePlacement(await loadLaunch()); },
     preflightPeer: async (row: MembershipValue, input: DeskSeatCreateInputValue, context?: SelectionContext) => {
       if (row.workspaceId === null && input.placement?.kind !== "existing") throw new FormationPlanningError("CAPABILITY_GAP", "formation requires an exact workspace");
-      const launch = await loadLaunch(); requireSelection(launch);
+      const launch = await loadLaunch(); requireSelection(launch); requireCentral(launch, context);
       const request = await peerRequest(row, input, context);
       const providers = launch.peerSelectionNeedsCapabilities?.(request) ? taskProviderInventory(await observeProviders(row, context), launch.FORMATION_CAPABILITIES?.peerPresets === 2) : undefined;
       return launch.preflightPeerChoice!(request, providers);
     },
     selectPeer: async (row: MembershipValue, input: DeskSeatCreateInputValue, phase: PhaseWriter, guard: () => Promise<DeskRejectionValue | null>, context?: SelectionContext) => {
       if (row.workspaceId === null && !context?.target) throw new FormationPlanningError("CAPABILITY_GAP", "formation requires an exact workspace");
-      const launch = await loadLaunch(); requireSelection(launch);
+      const launch = await loadLaunch(); requireSelection(launch); requireCentral(launch, context);
       const observed = await observeProviders(row, context);
       const refused = await guard();
       if (refused !== null) throw new FormationPlanningError(refused.code, refused.message);
@@ -300,7 +358,11 @@ export async function runSeatCreate(row: MembershipValue, input: DeskSeatCreateI
     let context: SelectionContext | undefined;
     if (placed) {
       if (!deps.placement || !deps.placementCapability) return reject("CAPABILITY_GAP", "connected placement capabilities unavailable");
-      try { await deps.placementCapability(); context = { sourceRepository: (await deps.placement.source(row)).repository }; }
+      try {
+        await deps.placementCapability();
+        const located = await deps.placement.source(row);
+        context = { sourceRepository: located.repository, ...(located.central || located.binding ? { centralPin: located } : {}) };
+      }
       catch (error) { return error instanceof FormationPlanningError ? selectionFailure(error) : placementFailure(error); }
     } else if (deps.placement) {
       try { await deps.placement.assertCaller(row); const source = await deps.placement.inheritedSource(row); if (source) { await deps.placementCapability?.(); context = { source }; } }
@@ -335,7 +397,14 @@ export async function runSeatCreate(row: MembershipValue, input: DeskSeatCreateI
         if (target) { await deps.placement!.verify(row, target); return deps.guard(); }
         await verifySource(); return null;
       };
-      try { selected = await deps.selectPeer!(row, input, phase, decisionGuard, target ? { target } : source ? { source } : undefined); }
+      try {
+        selected = await deps.selectPeer!(row, input, phase, decisionGuard, target ? { target } : source ? { source } : undefined);
+        const pin = (target?.source ?? source);
+        if (pin?.central !== undefined) {
+          const seen = (selected as { source?: { scope?: unknown; central?: { client?: unknown } } }).source;
+          requireCentralProvenance(pin, seen?.scope, seen?.central?.client);
+        }
+      }
       catch (error) { return error instanceof FormationPlacementError || error instanceof FormationPlacementUncertain ? placementFailure(error, undefined, target) : selectionFailure(error); }
       // This durable pin precedes every create/observe/delivery replan.
       phase("route-selected", selected);

@@ -1,7 +1,8 @@
 // The v2 view shares the existing target-bound draft/CAS controller. The v1
 // editor stays available until the Human explicitly previews a conversion.
 import { useState } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
+import { Text } from '../pt-br.ts';
 import type { CatalogResult, FamilyName } from '../../shared/contracts.ts';
 import { FAMILY_LABEL } from '../../shared/runtime/families.ts';
 import { isAutomaticEffort } from '../../shared/runtime/peer-presets.ts';
@@ -33,7 +34,8 @@ export function DefaultPresetControls({ colors, pool }: { colors: Colors; pool: 
   </View>;
 }
 
-export function PresetPoolCard({ colors, pool, availableFamilies, catalogs, retryCatalog, retryFeatureSet }: {
+export function PresetPoolCard({ colors, pool, availableFamilies, catalogs, retryCatalog, retryFeatureSet, heading }: {
+  heading?: { title: string; subtitle: string };
   colors: Colors; pool: PeerPoolCardState; availableFamilies: readonly FamilyName[];
   catalogs: Partial<Record<string, CatalogResult>>;
   retryCatalog(family: FamilyName, role: 'peer'): Promise<unknown>;
@@ -44,7 +46,7 @@ export function PresetPoolCard({ colors, pool, availableFamilies, catalogs, retr
   const migration = pool.poolData?.pool?.version === 1;
   const edit = <K extends keyof PeerSeatForm>(index: number, key: K, value: PeerSeatForm[K]) => pool.updatePool(form => ({ ...form,
     seats: form.seats.map((seat, i) => i === index ? { ...seat, [key]: value } : seat) }));
-  return <Card colors={colors} title="Peer pool" subtitle="Five starter presets, or add your own. You configure models; Lead / Jev chooses a preset and supported effort for the assignment."
+  return <Card colors={colors} title={heading?.title ?? "Peer pool"} subtitle={heading?.subtitle ?? "Five starter presets, or add your own. You configure models; Lead / Jev chooses a preset and supported effort for the assignment."}
     trailing={<Badge colors={colors} label={pool.poolDirty ? 'Unsaved changes' : pool.poolData?.pool ? 'Saved pool' : 'Unsaved starter presets'} tone={pool.poolDirty ? 'draft' : 'neutral'} />}>
     {pool.poolReadError || pool.poolData?.error ? <Text style={{ color: colors.statusWarning }}>{pool.poolReadError ?? pool.poolData?.error}</Text> : null}
     {pool.poolData !== null && !pool.fresh ? <Text style={{ color: colors.foregroundMuted }}>Refreshing pool; previous data is read-only.</Text> : null}

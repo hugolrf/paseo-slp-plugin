@@ -85,37 +85,37 @@ test('model picker preserves selection on disclosure, clears to provider default
   const text = () => JSON.stringify(renderer.toJSON());
 
   assert.match(text(), /saved-model/);
-  await press('Change model');
+  await press('Alterar modelo');
   assert.equal(opens, 1);
-  assert.equal(control('Pressable', 'Close Model').props.accessibilityState.expanded, true);
+  assert.equal(control('Pressable', 'Fechar Modelo').props.accessibilityState.expanded, true);
   assert.match(text(), /saved-model/);
   assert.deepEqual(changes, [], 'opening the picker must not replace the saved model');
-  await press('Close Model');
-  await press('Change model');
+  await press('Fechar Modelo');
+  await press('Alterar modelo');
   assert.equal(opens, 2);
   assert.deepEqual(changes, [], 'closing and reopening must not edit the model');
 
-  await press('Select Provider default');
+  await press('Selecionar padrão do provedor');
   assert.deepEqual(changes, ['']);
-  assert.equal(control('Pressable', 'Change model').props.accessibilityState.expanded, false);
+  assert.equal(control('Pressable', 'Alterar modelo').props.accessibilityState.expanded, false);
   assert.doesNotMatch(text(), /saved-model/);
-  assert.match(text(), /Provider default/);
+  assert.match(text(), /Padrão do provedor/);
 
-  await press('Change model');
-  await press('Select Catalog model catalog-model');
+  await press('Alterar modelo');
+  await press('Selecionar Catalog model catalog-model');
   assert.deepEqual(changes, ['', 'catalog-model']);
   assert.match(text(), /Catalog model/);
-  await press('Change model');
-  await press('Enter model ID manually');
+  await press('Alterar modelo');
+  await press('Informar ID do modelo manualmente');
   assert.deepEqual(changes, ['', 'catalog-model'], 'manual disclosure must not edit the model');
-  assert.equal(control('TextInput', 'Model ID').props.value, 'catalog-model');
-  await act(async () => control('TextInput', 'Model ID').props.onChangeText('custom-model'));
+  assert.equal(control('TextInput', 'ID de Modelo').props.value, 'catalog-model');
+  await act(async () => control('TextInput', 'ID de Modelo').props.onChangeText('custom-model'));
   assert.deepEqual(changes, ['', 'catalog-model', 'custom-model']);
-  assert.equal(control('TextInput', 'Model ID').props.value, 'custom-model');
-  await press('Close Model');
+  assert.equal(control('TextInput', 'ID de Modelo').props.value, 'custom-model');
+  await press('Fechar Modelo');
   assert.match(text(), /custom-model/);
-  await press('Change model');
-  assert.equal(control('TextInput', 'Model ID').props.value, 'custom-model');
+  await press('Alterar modelo');
+  assert.equal(control('TextInput', 'ID de Modelo').props.value, 'custom-model');
   assert.deepEqual(changes, ['', 'catalog-model', 'custom-model']);
 });
 
@@ -123,22 +123,22 @@ test('binding identity distinguishes mismatch, missing read, unbound and verific
   const mod = await loadHooks(t);
   const renderer = await render(t, mod.RuntimeIdentity, { colors, statusView: runtime(), home: '/typed' });
   const text = () => JSON.stringify(renderer.toJSON());
-  assert.match(text(), /Runtime differs from this plugin/);
-  assert.match(text(), /Choose Update SLP runtime/);
-  assert.match(text(), /Reloading the UI does not change the active binding/);
-  assert.match(text(), /Not yet verified/);
+  assert.match(text(), /O runtime difere deste plugin/);
+  assert.match(text(), /Escolha Atualizar runtime SLP/);
+  assert.match(text(), /Recarregar a interface não altera o vínculo ativo/);
+  assert.match(text(), /Ainda não verificado/);
   assert.ok(text().includes(A) && text().includes(B));
   assert.ok(text().includes('/canonical/a'));
   assert.doesNotMatch(text(), /\/typed/);
   await act(async () => renderer.update(React.createElement(mod.RuntimeIdentity,
     { colors, statusView: runtime({ binding: null, verifiedAt: '2026-10-11T04:00:00Z' }), home: '/typed' })));
-  assert.match(text(), /No active binding/);
+  assert.match(text(), /Nenhum vínculo ativo/);
   assert.match(text(), /2026-10-11T04:00:00Z/);
-  assert.doesNotMatch(text(), /Runtime differs from this plugin/);
-  assert.doesNotMatch(text(), /Choose Update SLP runtime/);
+  assert.doesNotMatch(text(), /O runtime difere deste plugin/);
+  assert.doesNotMatch(text(), /Escolha Atualizar runtime SLP/);
   await act(async () => renderer.update(React.createElement(mod.RuntimeIdentity, { colors, statusView: null, home: '/typed' })));
-  assert.match(text(), /Awaiting inspection/);
-  assert.doesNotMatch(text(), /No active binding|Not yet verified/);
+  assert.match(text(), /Aguardando inspeção/);
+  assert.doesNotMatch(text(), /Nenhum vínculo ativo|Ainda não verificado/);
 });
 
 test('Manager starts at Overview, exposes conflicts, keeps drafts across sections and never writes on navigation', async t => {
@@ -159,16 +159,16 @@ test('Manager starts at Overview, exposes conflicts, keeps drafts across section
   } };
   const renderer = await render(t, mod.ManagerSurface, { host: { id: 'host-a', label: 'Fixture host' },
     layout: { compact: true, platform: 'web' }, theme: { colors } });
-  const tab = name => renderer.root.findByProps({ accessibilityLabel: `${name} tab` });
-  assert.equal(tab('Overview').props.accessibilityState.selected, true);
+  const tab = name => renderer.root.findByProps({ accessibilityLabel: `${name} · aba` });
+  assert.equal(tab('Visão geral').props.accessibilityState.selected, true);
   assert.match(JSON.stringify(renderer.toJSON()), /fixture conflict/);
-  await act(async () => tab('Profiles').props.onPress());
+  await act(async () => tab('Perfis').props.onPress());
   const card = renderer.root.findByType(mod.ManagerSurface).findAll(node => node.type.name === 'RoutingCard')[0];
   await act(async () => card.props.routing.setField('supervisor', 'model')('unsaved-model'));
-  await act(async () => tab('Supervision').props.onPress());
-  await act(async () => tab('Profiles').props.onPress());
+  await act(async () => tab('Supervisão').props.onPress());
+  await act(async () => tab('Perfis').props.onPress());
   assert.equal(card.props.routing.form.supervisor.model, 'unsaved-model');
-  assert.match(JSON.stringify(renderer.toJSON()), /Save profiles/);
+  assert.match(JSON.stringify(renderer.toJSON()), /Salvar perfis/);
   assert.equal(calls.filter(call => /^(set-|activate|reconcile|deactivate|test-)/.test(call.name)).length, 0);
 });
 
@@ -273,7 +273,7 @@ test('unbound Profiles allow drafts but keep Save disabled and disclose activati
   await act(async () => rig.routing().setField('supervisor', 'model')('draft-model'));
   assert.equal(rig.routing().form.supervisor.model, 'draft-model');
   assert.equal(control(rig, 'Save profiles').props.disabled, true);
-  assert.match(JSON.stringify(rig.renderer.toJSON()), /Activate first/);
+  assert.match(JSON.stringify(rig.renderer.toJSON()), /Ative primeiro/);
   assert.equal(modal(rig), undefined);
   assert.equal(rig.calls.filter(call => /^(set-|activate)/.test(call.name)).length, 0);
 });
@@ -332,7 +332,7 @@ for (const failure of ['save-error', 'target-switch', 'candidate-change', 'statu
     await act(async () => rig.reads.calls[0].resolve(runtime()));
     await act(async () => rig.routing().setField('supervisor', 'model')('new-model'));
     await act(async () => control(rig, 'Save profiles').props.onPress());
-    assert.match(JSON.stringify(rig.renderer.toJSON()), /Applying also updates the bound runtime/);
+    assert.match(JSON.stringify(rig.renderer.toJSON()), /Aplicar também atualiza o runtime vinculado/);
     await acknowledge(rig);
     await act(async () => control(rig, 'Save and apply').props.onPress());
     if (failure === 'save-error') await act(async () => saves.calls[0].reject(new Error('save refused')));
@@ -470,7 +470,7 @@ test('screen params follow direct links, back and reload; compact selector write
   assert.equal(rig.routing().form.supervisor.model, 'local-draft');
   await rig.update({ params: { section: 'unknown', daemonHome: '/never-forwarded', authority: 'never-forwarded' } });
   assert.equal(selector().props.value, 'overview');
-  assert.match(JSON.stringify(rig.renderer.toJSON()), /Unknown section/);
+  assert.match(JSON.stringify(rig.renderer.toJSON()), /Seção desconhecida/);
   assert.ok(rig.calls.every(call => !JSON.stringify(call.input).includes('never-forwarded')));
   assert.equal(rig.calls.filter(call => call.name === 'status').length, 1, 'section changes do not refetch or auto-save');
 });
@@ -520,6 +520,7 @@ test('all manager sections and binding retain completed reads on reopen while fr
   const metadata = { schemaVersion: 1, models: [{ id: 'fixture-model', label: 'Fixture model', thinkingOptions: [{ id: 'high', label: 'high' }] }],
     modes: [{ id: 'full-access', label: 'Full access' }], features: [{ id: 'flag', label: 'Feature flag', type: 'toggle', value: false }], error: null };
   const reads = {
+    'get-clients': { schemaVersion: 1, canonicalHome: '/a', mapState: 'absent', mapSha256: null, map: null, mapError: null, hostErrors: [], mapExternalChange: false, clients: [] },
     'local-target': { daemonHome: '/a' }, status: runtime({ embeddedCandidateSha256: A, communicationLanguage: 'Vietnamese' }),
     'get-role-routing': { routing: { schemaVersion: 1, supervisor: { family: 'codex', model: 'fixture-model', modeId: 'full-access', thinkingOptionId: 'high' }, lead: { family: 'codex', model: 'fixture-model' } } },
     'get-peer-pool': { pool: { version: 1, policy: 'Remember this pool', options: [], quotaFallback: { enabled: false, optionId: null } }, sha256: A, error: null, legacy: null, legacyError: null },
@@ -549,13 +550,13 @@ test('all manager sections and binding retain completed reads on reopen while fr
   assert.ok(renderer.root.findAll(node => node.type.name === 'LanguageCard')[0].props.disabled);
   const fields = card('RoutingCard').findAll(node => node.type.name === 'Field' && ['Mode', 'Feature values (JSON)', 'Thinking option'].includes(node.props.label));
   assert.equal(fields.length, 0, 'cached option controls remain; no transient raw editors');
-  assert.ok(JSON.stringify(renderer.toJSON()).includes('Refreshing provider options'));
+  assert.ok(JSON.stringify(renderer.toJSON()).includes('Atualizando opções do provedor'));
   assert.equal(renderer.toJSON().children[1].type, 'View', 'a conditional refresh banner must not insert a row above Binding');
   const headerReadStatus = () => renderer.root.findAll(node => node.type === 'Text' && node.props.accessibilityLiveRegion === 'polite'
-    && typeof node.props.accessibilityLabel === 'string' && node.props.accessibilityLabel.includes(' on Fixture'))[0];
+    && typeof node.props.accessibilityLabel === 'string' && node.props.accessibilityLabel.includes(' em Fixture'))[0];
   assert.equal(headerReadStatus().props.numberOfLines, 1);
-  assert.equal(headerReadStatus().props.accessibilityLabel, 'Updating saved view on Fixture');
-  assert.equal(headerReadStatus().props.accessibilityHint, 'Writes wait for a fresh read.');
+  assert.equal(headerReadStatus().props.accessibilityLabel, 'Atualizando visão salva em Fixture');
+  assert.equal(headerReadStatus().props.accessibilityHint, 'As gravações aguardam uma leitura atualizada.');
   const rootPrefix = renderer.toJSON().children.slice(0, 2).map(node => node.type);
 
   await act(async () => card('RoutingCard').props.onSave());
@@ -570,15 +571,15 @@ test('all manager sections and binding retain completed reads on reopen while fr
   await act(async () => statusCall.resolve(reads.status));
   assert.deepEqual(renderer.toJSON().children.slice(0, 2).map(node => node.type), rootPrefix, 'fresh completion must not remove an intervening layout row');
   assert.equal(headerReadStatus().props.numberOfLines, 1);
-  assert.equal(headerReadStatus().props.accessibilityLabel, 'Runtime and work settings on Fixture');
+  assert.equal(headerReadStatus().props.accessibilityLabel, 'Configurações de runtime e trabalho em Fixture');
   assert.equal(headerReadStatus().props.accessibilityHint, undefined);
   assert.equal(renderer.root.findAll(node => node.type.name === 'LanguageCard')[0].props.disabled, false, 'successful fresh status releases its write guard');
   await act(async () => renderer.root.findAll(node => node.props.label === 'Refresh' && typeof node.props.onPress === 'function')[0].props.onPress());
   const failedRefresh = deferred.calls.filter(call => call.input.name === 'status').at(-1);
   await act(async () => failedRefresh.reject(new Error('runtime refresh unavailable')));
-  assert.equal(headerReadStatus().props.accessibilityLabel, 'Runtime read unavailable on Fixture');
+  assert.equal(headerReadStatus().props.accessibilityLabel, 'Leitura do runtime indisponível em Fixture');
   assert.equal(renderer.root.findAll(node => node.type.name === 'LanguageCard')[0].props.disabled, true, 'refresh failure never grants writes from retained status');
-  assert.ok(JSON.stringify(renderer.toJSON()).includes('runtime refresh unavailable'));
+  assert.ok(JSON.stringify(renderer.toJSON()).includes('atualização do runtime indisponível'));
   assert.ok(JSON.stringify(renderer.toJSON()).includes(A), 'failed status refresh does not erase the displayed binding');
   assert.deepEqual(mutations, []);
 });
@@ -619,7 +620,7 @@ test('binding keeps its badge and verification row mounted before the initial re
   const verificationCount = () => renderer.root.findAll(node => node.type.name === 'KV' && node.props.label === 'Last binding verification').length;
   assert.equal(badgeCount(), 1);
   assert.equal(verificationCount(), 1);
-  assert.doesNotMatch(JSON.stringify(renderer.toJSON()), /Not bound|Not yet verified/);
+  assert.doesNotMatch(JSON.stringify(renderer.toJSON()), /Não vinculado|Ainda não verificado/);
   await act(async () => renderer.update(React.createElement(mod.RuntimeIdentity, { colors, statusView: runtime({ embeddedCandidateSha256: A }), home: '/a' })));
   assert.equal(badgeCount(), 1); assert.equal(verificationCount(), 1);
 });
@@ -647,18 +648,18 @@ test('manual Refresh after a fresh read keeps the header row stable and revokes 
   const rig = await managerRig(t, {}, {}, true);
   await act(async () => rig.reads.calls[0].resolve(runtime()));
   const subtitle = () => rig.renderer.root.findAll(node => node.type === 'Text' && node.props.accessibilityLiveRegion === 'polite'
-    && typeof node.props.accessibilityLabel === 'string' && node.props.accessibilityLabel.endsWith(' on Fixture host'))[0];
+    && typeof node.props.accessibilityLabel === 'string' && node.props.accessibilityLabel.endsWith(' em Fixture host'))[0];
   const language = () => rig.renderer.root.findAll(node => node.type.name === 'LanguageCard')[0];
   const before = rig.renderer.toJSON().children.slice(0, 2).map(node => node.type);
   assert.equal(language().props.disabled, false);
   await act(async () => control(rig, 'Refresh').props.onPress());
-  assert.equal(subtitle().props.accessibilityLabel, 'Updating saved view on Fixture host');
+  assert.equal(subtitle().props.accessibilityLabel, 'Atualizando visão salva em Fixture host');
   assert.equal(subtitle().props.numberOfLines, 1);
-  assert.equal(subtitle().props.accessibilityHint, 'Writes wait for a fresh read.');
+  assert.equal(subtitle().props.accessibilityHint, 'As gravações aguardam uma leitura atualizada.');
   assert.equal(language().props.disabled, true);
   assert.deepEqual(rig.renderer.toJSON().children.slice(0, 2).map(node => node.type), before);
   await act(async () => rig.reads.calls[1].resolve(runtime()));
-  assert.equal(subtitle().props.accessibilityLabel, 'Runtime and work settings on Fixture host');
+  assert.equal(subtitle().props.accessibilityLabel, 'Configurações de runtime e trabalho em Fixture host');
   assert.equal(language().props.disabled, false);
   assert.deepEqual(rig.renderer.toJSON().children.slice(0, 2).map(node => node.type), before);
 });
@@ -758,7 +759,7 @@ test('chained Save Apply transport uncertainty keeps saved choices and original 
   await act(async () => rig.reads.calls[2].reject(new Error('Apply probe lost')));
   assert.equal(rig.routing().saved, true);
   assert.equal(rig.routing().form.supervisor.model, 'saved-model');
-  assert.ok(JSON.stringify(rig.renderer.toJSON()).includes('Saved; Apply outcome unconfirmed'));
+  assert.ok(JSON.stringify(rig.renderer.toJSON()).includes('Salvo; resultado da aplicação não confirmado'));
   const card = rig.renderer.root.findAll(node => node.type.name === 'RoutingCard')[0];
   await act(async () => card.props.onSave());
   assert.equal(starts.calls.length, 1);

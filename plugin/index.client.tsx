@@ -27,15 +27,15 @@ export default function contribute(client: Parameters<PluginClientContribution>[
   }
   try {
     removers.push(client.addScreen({ id: MANAGER_SCREEN_ID, title: managerTitle, Component: ManagerScreen }));
-    removers.push(client.addSidebarHeaderItem({ id: "slp", title: "SLP", Component: SlpSidebarItem }));
+    removers.push(client.addSidebarHeaderItem({ id: "slp", title: "Equipes", Component: SlpSidebarItem }));
     removers.push(client.addCommandCenterItem({
-      id: "open-slp", title: "Open SLP Overview", icon: "Workflow", context: "global",
+      id: "open-slp", title: "Abrir Equipes", icon: "Workflow", context: "global",
       keywords: ["slp", "supervisor", "lead", "peer", "providers", "hierarchy"],
       onSelect({ openScreen }) { openScreen(managerLocation()); },
     }));
-    removers.push(client.addWorkspacePanel({ id: "slp-work", title: "SLP work", icon: "Workflow", context: "workspace", Component: WorkflowPanel }));
+    removers.push(client.addWorkspacePanel({ id: "slp-work", title: "Trabalho das Equipes", icon: "Workflow", context: "workspace", Component: WorkflowPanel }));
     removers.push(client.addCommandCenterItem({
-      id: "open-slp-work", title: "Read SLP work", icon: "Workflow", context: "workspace",
+      id: "open-slp-work", title: "Ler trabalho das Equipes", icon: "Workflow", context: "workspace",
       keywords: ["slp", "brief", "review", "decisions", "proof"],
       onSelect({ openPanel }) { openPanel("slp-work"); },
     }));

@@ -300,3 +300,21 @@ test('F4: coverage scanner fails closed on aliases and indices and scans beyond 
     { request: 'request', seat: 'seat', entry: 'entry' },
     'function recordBuild(request) { const { seat } = request; const alias = seat; alias.extra; }'), /extend.*scanner/);
 });
+
+test('clients validate is self-described, strict about its subcommand and read-only', t => {
+  const dir = fixture(t);
+  const usage = run(['no-such-command']);
+  assert.equal(usage.status, 1);
+  assert.match(usage.stderr, /clients validate \[--paseo-home <absolute-home>\]/);
+  const home = join(dir, 'home');
+  mkdirSync(home);
+  for (const args of [['clients'], ['clients', 'other'], ['clients', 'validate', 'extra'], ['clients', 'validate', '--out', join(dir, 'x')], ['clients', 'validate', '--paseo-home', 'relative']]) {
+    assert.equal(run(args, undefined, home).status, 1, args.join(' '));
+  }
+  const absent = run(['clients', 'validate', '--paseo-home', home]);
+  assert.equal(absent.status, 1);
+  assert.equal(JSON.parse(absent.stdout).ok, false);
+  assert.deepEqual(JSON.parse(absent.stdout).errors, ['client map is absent']);
+  assert.equal(run(['clients', 'validate', '--paseo-home', home]).stdout, absent.stdout, 'deterministic');
+  assert.equal(readFileSync(new URL('../docs/cli.md', import.meta.url), 'utf8').includes('## `clients validate`'), true);
+});

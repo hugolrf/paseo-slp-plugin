@@ -3,7 +3,8 @@ import { useRpc } from "@getpaseo/plugin/client";
 import type { PluginPopoverProps, PluginSidebarItemProps } from "@getpaseo/plugin/client";
 import { SidebarRow } from "@getpaseo/plugin/client/ui";
 import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, View } from "react-native";
+import { Text, ptBR } from "./pt-br.ts";
 import { localTarget, status } from "../shared/contracts.ts";
 import type { StatusResult } from "../shared/contracts.ts";
 import { errorMessage } from "./manager-state.ts";
@@ -37,7 +38,7 @@ export function RuntimePopover({ host, theme, layout, openScreen, close }: Plugi
   useEffect(() => { void refresh(); }, [refresh]);
   const colors = theme.colors;
   return <ScrollView contentContainerStyle={{ padding: layout.compact ? 16 : 24, gap: 12 }}>
-    <Text style={[styles.cardTitle, { color: colors.foreground }]}>SLP on {host.label}</Text>
+    <Text style={[styles.cardTitle, { color: colors.foreground }]}>Equipes em {host.label}</Text>
     {read.loading ? <Text style={[styles.muted, { color: colors.foregroundMuted }]}>Reading runtime…</Text> : null}
     {read.error ? <Text selectable style={[styles.muted, { color: colors.statusDanger }]}>Runtime unavailable: {read.error}. Refresh to retry.</Text> : null}
     <StatePill colors={colors} state={read.result?.state ?? null} />
@@ -57,8 +58,8 @@ export function SlpSidebarItem({ currentScreen, openScreen, openPopover, theme }
   const size = 32;
   return <SidebarRow icon="Workflow" active={currentScreen?.screenId === MANAGER_SCREEN_ID}
     onPress={() => openScreen(managerLocation())}
-    trailing={<Pressable accessibilityRole="button" accessibilityLabel="Quick view SLP runtime"
-      accessibilityHint="Open runtime details for this host" focusable
+    trailing={<Pressable accessibilityRole="button" accessibilityLabel={"Visão rápida do Equipes"}
+      accessibilityHint={ptBR("Open runtime details for this host")} focusable
       hitSlop={6} onPress={() => openPopover(RuntimePopover)}
       style={(state: ControlState) => [
         { width: size, height: size, borderRadius: 8, alignItems: "center", justifyContent: "center" },

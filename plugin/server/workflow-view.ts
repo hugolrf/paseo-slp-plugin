@@ -7,8 +7,9 @@ import { createDeskStore, effectiveOwner, repoKeyFor } from "./desk-store.ts";
 import type { DeskStore } from "./desk-store.ts";
 import { projectDeskWorkflow } from "./desk-assignment.ts";
 import { taskQueueCounts } from "./desk-task.ts";
-import { GetWorkspaceWorkflowInput, GetWorkspaceWorkflowOutput } from "../shared/workflow-view.ts";
-import type { WorkspaceWorkflowResult } from "../shared/workflow-view.ts";
+import { GetWorkspaceWorkflowInput, GetWorkspaceWorkflowOutput, StartWorkspaceTeamInput, StartWorkspaceTeamOutput } from "../shared/workflow-view.ts";
+import type { StartWorkspaceTeamResult, WorkspaceWorkflowResult } from "../shared/workflow-view.ts";
+import { configFile, agentProfiles } from "./runtime/cli/host-config.ts";
 import { MAX_RPC_BYTES, OperationConflict } from "../shared/contracts.ts";
 
 /** Human reads use the selected workspace on the connected daemon. A client
@@ -78,6 +79,82 @@ export async function bindWorkspaceDesk(workspaceId: string, paseo: WorkflowHost
   } catch {
     return { state: "unavailable", reason: "repository-unavailable", detail: "The selected workspace could not be bound to a Git repository." };
   }
+}
+
+const workspaceBootstrap = new Map<string, Promise<StartWorkspaceTeamResult>>();
+
+export async function startManagedWorkspaceTeam(input: unknown, paseo: WorkflowHostApi | undefined): Promise<StartWorkspaceTeamResult> {
+  const parsed = StartWorkspaceTeamInput.safeParse(input);
+  if (!parsed.success) throw new OperationConflict("INVALID_REQUEST", "invalid workspace team bootstrap request");
+  const binding = await bindWorkspaceDesk(parsed.data.workspaceId, paseo);
+  if (binding.state !== "ok") throw new Error(binding.detail);
+  const store = createDeskStore({ stableRoot: binding.home.stableRoot });
+  const existing = store.read(binding.repoKey);
+  if (existing.state === "ok") return StartWorkspaceTeamOutput.parse({
+    schemaVersion: 1, workspaceId: parsed.data.workspaceId, state: "already-managed",
+    repoKey: binding.repoKey, agentId: null,
+  });
+  if (existing.state !== "absent") {
+    throw new Error("the repository desk reads " + existing.state);
+  }
+  const prior = workspaceBootstrap.get(binding.repoKey);
+  if (prior) return prior;
+  const run = (async () => {
+    const file = configFile(binding.home.canonicalHome);
+    const profiles = agentProfiles(file.config).filter((entry): entry is Record<string, unknown> =>
+      entry !== null && typeof entry === "object" && !Array.isArray(entry));
+    const matches = profiles.filter(profile => profile.id === "slp-supervisor");
+    if (matches.length !== 1) throw new Error("saved SLP Supervisor profile is unavailable or ambiguous");
+    const profile = matches[0];
+    if (typeof profile.provider !== "string" || !/^slp-[a-z0-9-]+-supervisor$/.test(profile.provider)) {
+      throw new Error("saved SLP Supervisor provider is invalid");
+    }
+    for (const key of ["model", "modeId", "thinkingOptionId"] as const) {
+      const value = profile[key];
+      if (value !== undefined && value !== null && typeof value !== "string") {
+        throw new Error("saved SLP Supervisor " + key + " is invalid");
+      }
+    }
+    if (profile.featureValues !== undefined && profile.featureValues !== null &&
+        (typeof profile.featureValues !== "object" || Array.isArray(profile.featureValues))) {
+      throw new Error("saved SLP Supervisor feature values are invalid");
+    }
+    const rawHandle = paseo?.workspaces?.ref?.(parsed.data.workspaceId);
+    const handle = rawHandle as unknown as { agents?: { create?: (options: {
+      idempotencyKey: string; config: Record<string, unknown>; title: string; prompt: string; labels: Record<string, string>;
+    }) => Promise<{ id: string }> } };
+    if (!handle?.agents?.create) throw new Error("this host cannot create an agent in the selected workspace");
+    const provider = typeof profile.model === "string" && profile.model.length
+      ? profile.provider + "/" + profile.model : profile.provider;
+    const config = {
+      provider,
+      ...(typeof profile.modeId === "string" ? { modeId: profile.modeId } : {}),
+      ...(typeof profile.thinkingOptionId === "string" ? { thinkingOptionId: profile.thinkingOptionId } : {}),
+      ...(profile.featureValues && typeof profile.featureValues === "object"
+        ? { featureValues: structuredClone(profile.featureValues) } : {}),
+    };
+    const agent = await handle.agents.create({
+      idempotencyKey: "slp-workspace-bootstrap:" + binding.repoKey,
+      config,
+      title: "Equipes · Supervisor do workspace",
+      prompt: [
+        "Você é o Supervisor do Equipes para este workspace Git já existente.",
+        "Inicialize a mesa gerenciada deste repositório e registre uma atribuição para o trabalho representado pelo workspace atual.",
+        "Inspecione a branch, o checkout e qualquer contexto de PR disponível no Paseo antes de decidir o objetivo. Não invente requisitos ausentes.",
+        "Conduza planejamento interno → Líder → Dev quando houver mudança solicitada → Revisor independente → QA com evidências.",
+        "Se o workspace representar apenas revisão de PR, não altere código sem necessidade: priorize revisão, testes e evidências.",
+        "Não faça merge, push, tag, deploy, produção ou qualquer ação externa irreversível sem autorização explícita.",
+        "Se não for possível determinar com segurança o objetivo do workspace/PR, registre BLOCKED e peça apenas a informação faltante.",
+      ].join("\n\n"),
+      labels: { "slp.bootstrap": "workspace", "slp.repo": binding.repoKey },
+    });
+    return StartWorkspaceTeamOutput.parse({
+      schemaVersion: 1, workspaceId: parsed.data.workspaceId, state: "started",
+      repoKey: binding.repoKey, agentId: agent.id,
+    });
+  })().finally(() => workspaceBootstrap.delete(binding.repoKey));
+  workspaceBootstrap.set(binding.repoKey, run);
+  return run;
 }
 
 export interface WorkflowViewDeps {

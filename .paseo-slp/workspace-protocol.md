@@ -1,8 +1,8 @@
 ---
 version: '15'
-owner: 'duongvm (Human)'
+owner: 'Hugo (fork owner; historical decisions retained below)'
 applies_to: 'paseo-slp source repository'
-last_reviewed: '2026-10-07'
+last_reviewed: '2026-11-01'
 package_version: '0.4.0'
 template_sha256: 'c5b6db392e3d9646d931cda658c3364fe64287caf1f9717ad323681f2e860ad1'
 template_source: 'source checkout; unreleased working candidate'
@@ -13,6 +13,9 @@ review_selection_decided_by: 'duongvm (Human)'
 review_selection_decided_at: '2026-10-03'
 review_selection_authority: '/tmp/paseo-slp-review-selection-20261003/assignment.md; Human-approved selection and source-protocol budget change'
 routing_intent: 'pinned'
+routing_change_decided_by: 'Hugo (configuração de equipes por projeto)'
+routing_change_date: '2026-11-01'
+routing_change_note: 'Catálogo explícito .paseo-slp/slp-routing.json para Dev, Revisor e QA; válido somente neste repositório; preservar autoridade histórica de upstream'
 supervisor_notebook: '.paseo-slp/notebook.md (owner: Supervisor)'
 decided_by: 'duongvm (Human)'
 decided_at: '2026-09-30'
@@ -123,3 +126,96 @@ Human review-selection authority. current_source_template_sha256/date record
 the newly measured source basis, not a rewritten historical provenance.
 Guarded desk operations use their current projection. Authority, required
 review, local R1/R2 and ordinary-path proof remain binding.
+
+## Acordo operacional Hugo — 2026-11-01
+
+Escopo: **Fork SLP**, tarefas pessoais de evolução de plugins; não implementar mudanças em repositórios ou ambientes de clientes a partir desta configuração.
+
+- Comunicação: respostas, planos, relatórios, revisões e evidências em português do Brasil. Preservar IDs, comandos, nomes de APIs, parâmetros e hashes literais.
+- Pipeline pretendido: Supervisor / Planejador (Lead) → Dev (Peer) → Revisor independente → QA independente → aguardando aprovação humana. A política customizada do fork ainda não é um gate ativo; não afirmar conclusão automática de etapas sem evidência real.
+- Supervisor/Lead recebe objetivo e critérios de aceite; Dev implementa somente o escopo aprovado; Revisor/QA não podem homologar o próprio trabalho. QA reprovado volta ao Dev com evidências e até duas tentativas de retrabalho. Ausência de capacidade ou escopo duvidoso: bloquear e consultar o usuário.
+- Não criar worktrees em ~/Projetos, ~/projetos ou dentro da raiz de projetos. Preferir workspace local já cadastrado e um único agente escritor por checkout; qualquer isolamento adicional exige local temporário autorizado e limpeza segura.
+- Nunca executar merge, deploy, tag, release, alteração de dados reais ou ações em produção sem aprovação específica do usuário. Não atribuir cards, alterar estados, publicar comentários ou enviar mensagens no Multica/Azure/Jira/Teams sem o portão de aprovação do motor foco.
+- Para integração de tarefas: Multica/Azure/Jira são fontes das tarefas e evidências; o plugin tasks/foco é a ponte. Não iniciar simultaneamente no Multica e no SLP a mesma tarefa; sem trava distribuída comprovada, não automatizar esse disparo.
+- Não mover segredos nem dados de cliente para este repositório; registros e decisões devem conter links ou IDs sem tokens.
+- Conservar skills já instaladas (`hugo-foco-do-dia`, `hugo-kepler-abrir-task-multica`) e usar `paseo-slp-onboarding` para revisão das regras por repositório.
+- Este documento regula o comportamento de agentes. Não significa que o runtime SLP esteja ativado; conferir `slp status` e os perfis antes de iniciar uma tarefa gerenciada.
+
+
+## Equipes — Operação Autônoma (Hugo)
+
+Para tarefas **locais de desenvolvimento** explicitamente atribuídas
+à equipe neste repositório, o mandato inclui decisões técnicas reversíveis,
+delegação entre Supervisor, Líder, Desenvolvedor, Revisor e QA, execução de
+testes e até duas rodadas de correção sem novas perguntas por fase.
+Supervisor e Líder devem usar o Desk SLP e o pool deste repositório,
+com revisão/QA independentes e uma única responsabilidade de escrita.
+Não criar worktrees em ~/Projetos; preservar alterações existentes.
+
+Sem autorização implícita para alterar tarefas no Multica, Azure ou Jira,
+para publicar em sistemas de cliente, instalar serviços persistentes,
+gerar cobranças, apagar trabalhos alheios, fazer commit/push/merge/tag,
+release ou deploy. Se a origem é externa, não executar sem reserva
+comprovadamente exclusiva e atual; em caso de dúvida, bloquear sem
+reivindicar a tarefa. O pedido "somente planejar" não concede execução.
+
+
+### Fallback de cota dos agentes (autorização limitada)
+
+Para trabalhos locais de desenvolvimento explicitamente autorizados
+neste repositório pessoal, se o Desenvolvedor Codex (dev-codex) sofrer
+falha confirmada de cota, o Líder pode realizar UMA única tentativa de
+substituição pelo preset dev-claude (Claude Sonnet 5.5, assinatura Max),
+usando o quotaFallback do catálogo e o Desk para criar uma nova sessão.
+
+Não autoriza compra, créditos, assinatura nova, API paga, publicação ou
+modificação de tarefas externas. É obrigatório evidenciar o erro de cota,
+verificar que não há outro escritor ativo no checkout, preservar a
+sessão anterior e registrar a seleção. Erros diferentes de cota não
+autorizam fallback. Sem segundo fallback: se Claude estiver
+indisponível, registrar BLOCKED.
+
+Revisor e QA continuam em sessões independentes, somente leitura.
+Continuam proibidos commit, push, merge, release, tag, deploy, produção,
+edição no Multica/Azure/Jira e worktrees sem autorização explícita.
+Ao recuperar a cota do Codex, comprovar disponibilidade antes de
+restaurar seu estado como ready.
+
+## Gate de Homologação — E2E e regras por empresa
+
+Esta política complementa o fluxo da equipe: resultados unitários,
+parecer do Revisor ou aceite do Líder NÃO substituem prova E2E quando
+a tarefa altera comportamento de usuário, integração, pipeline ou UI.
+
+Antes do trabalho, identificar empresa/conta, projeto, fonte de tarefa,
+repositório real, ambiente e regras de aceite. A autoridade do
+repositório Pessoal vale somente para Pessoal: nunca transportar
+seu pool, fallback, credenciais ou aprovações para TCERO,
+CemigSim, DWLaw ou outras empresas. Em tarefas externas,
+carregar a regra canônica da empresa do Cérebro e o protocolo
+do projeto; escopo desconhecido, conflito ou falta de lock
+verificável no controlador externo = BLOQUEADO.
+
+No QA, guardar no destino autorizado FORA do repositório de
+cliente: cenário e critérios, passo/entrada/esperado/obtido,
+ambiente, agente/executor, data, identidade de versão/commit/hash
+do candidato, comando e código de saída dos testes, logs,
+evidência visual identificável para telas ou trace técnico para
+API/integração, hash das provas e limitações de cobertura.
+Revisor e QA devem ser independentes do escritor.
+
+A suíte obrigatória deve ficar verde no ambiente homologado.
+Um baseline com falhas não é sinal verde para liberar um
+candidato: registrar as diferenças, sanar a falha ou BLOCKED
+com decisão explícita sobre a limitação. Testes simulados,
+prints de código e relatos de agentes não contam como prova
+E2E real.
+
+A ausência de cenário E2E requerido, versão pinada, prova
+de execução, evidência visual quando necessária, garantia de
+isolamento ou autorização empresarial exige resultado
+NOT_HOMOLOGATED/BLOCKED. Nenhum agente pode converter
+ACCEPT técnico em release, merge, tag ou deploy nesse estado.
+Quando não existir ambiente ou automação para coletar as
+provas, registrar CAPABILITY_GAP, em vez de inventá-las.
+

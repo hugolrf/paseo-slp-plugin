@@ -1,73 +1,73 @@
-Paseo SLP helps you delegate complex coding work to a coordinated team of agents without having to manage every agent yourself. A Lead owns coordination and integration; Peers take bounded implementation, design or review assignments; an optional Supervisor observes the workflow and relays your decisions. You keep control of goals, important trade-offs and final acceptance.
+O Paseo SLP permite delegar trabalhos complexos de desenvolvimento a uma equipe coordenada de agentes. O **Líder (Lead)** coordena e integra o trabalho; os **Especialistas (Peers)** executam atividades delimitadas de implementação, arquitetura e revisão; um **Supervisor** opcional acompanha a qualidade do processo e encaminha suas decisões. Você mantém a autoridade sobre objetivos, decisões importantes e aprovação final.
 
-The plugin loads each agent's role instructions and keeps shared work records in Paseo, so you can inspect who owns the work, what decisions were made and what evidence supports the result.
+O plugin carrega as instruções de cada papel e mantém registros compartilhados no Paseo, permitindo identificar responsabilidades, decisões e evidências.
 
-## When to use it
+## Quando utilizar
 
-- Work has strong dependencies between steps, and implementation may expose a faulty assumption.
-- Architecture, lifecycle or ownership needs clarification as work proceeds.
-- Multiple modules, projects, workspaces or owners need to coordinate across integration boundaries.
-- Long or complex work needs decisions and responsibility to survive interruptions or handoffs.
+- Existem dependências importantes entre as etapas e a implementação pode revelar uma premissa incorreta.
+- Arquitetura, ciclo de vida ou responsabilidade precisam ser esclarecidos durante o trabalho.
+- Múltiplos módulos, projetos, workspaces ou responsáveis precisam coordenar integrações.
+- O trabalho é suficientemente longo ou complexo para exigir continuidade após interrupções.
 
-For small tasks with clear contracts and few dependencies, such as simple CRUD or extensions following an existing pattern, one agent is often enough. Use SLP when coordination provides more value than its overhead.
+Para atividades pequenas, bem definidas e sem dependências relevantes, um único agente geralmente é suficiente. Use o SLP quando a coordenação trouxer mais valor do que sua complexidade.
 
-## How work is organized
+## Como o trabalho é organizado
 
-Give an **SLP Lead** a bounded objective, or work through an **SLP Supervisor**. The Lead chooses and creates the Peers needed for the task. Peers form independent judgments: they can challenge an assumption, request a missing dependency or report that work is blocked. Each moving scope has one writer.
+Defina um objetivo delimitado para o **SLP Lead** ou comece pelo **SLP Supervisor**. O Líder escolhe os Especialistas necessários. Cada Especialista pode questionar premissas, apontar dependências ausentes e relatar impedimentos. Apenas um agente deve modificar cada escopo de trabalho por vez.
 
-Set up `.paseo-slp/workspace-protocol.md` for minimum sufficient coordination. A clear, bounded task can start with one Peer Engineer; the Lead adds an Architect or Reviewer when needed. The Supervisor is optional.
+O arquivo `.paseo-slp/workspace-protocol.md` contém as regras específicas do repositório. Uma tarefa simples pode começar com um único Especialista de desenvolvimento; o Líder acrescenta Arquitetura ou Revisão conforme a necessidade.
 
-The repository desk preserves assignments, current briefs, decisions, dependencies, review and evidence. Its task queue supports Lead-invoked dispatch and integration, and planned handoff keeps an assignment's history. Open **Read SLP work** to inspect these records in the workspace. The desk distinguishes reported results from measured evidence; final acceptance stays with you.
+O painel de trabalho mantém atribuições, especificações, decisões, dependências, revisões e evidências. A fila permite encaminhamento e integração sob comando do Líder. A transferência planejada preserva o histórico da atribuição. Abra **Ler trabalho SLP** no workspace para consultar os registros. O painel separa resultados declarados de evidências verificadas; a aprovação final continua sendo sua.
 
-Each team member is an ordinary Paseo agent you can open and chat with. Agents can use Codex, Pi, Devin, Claude Code, OpenCode or Antigravity, with different providers and models in the same team.
+Cada integrante é um agente normal do Paseo e pode usar Codex, Pi, Devin, Claude Code, OpenCode ou Antigravity, inclusive com modelos diferentes na mesma equipe.
 
-## What this changes in practice
+## O que muda na prática
 
-| Coordination problem | SLP practice |
+| Problema | Como o SLP trata |
 | --- | --- |
-| Workers inherit a pre-solved answer | The Lead delegates outcomes; Peers can challenge the premise. |
-| Parallel agents overwrite each other's work | One writer per moving scope, with declared ownership and repository isolation tactics. |
-| Review approves an author's framing or an outdated change | Independent judgment on a stable candidate, with review revisited when the brief, scope or candidate changes. |
-| An idle agent or passing tests are treated as completion | The Lead assesses the integrated candidate and its evidence; you retain final acceptance. |
+| Um agente recebe uma solução pronta e apenas a reproduz | O Líder delega resultados; o Especialista pode contestar a premissa. |
+| Agentes paralelos sobrescrevem o trabalho uns dos outros | Um responsável por cada escopo de escrita, com isolamento apropriado. |
+| A revisão valida uma mudança desatualizada ou influenciada pelo autor | Revisão independente de um candidato estável, repetida quando o escopo ou código muda. |
+| Agente ocioso ou teste aprovado é confundido com entrega aceita | O Líder analisa o resultado integrado e suas evidências; você mantém a aprovação final. |
 
-## Setup
+## Configuração
 
-1. Install and sign in to at least one supported provider CLI on the daemon host, then open **SLP** in the sidebar. Available provider CLIs are discovered automatically, before activation; Codex is optional.
-2. Open **SLP > Profiles**, choose a provider and an explicit model for the Supervisor and the Lead, then choose **Save profiles**. Confirm the daemon home and exclusive configuration window when prompted. Saving applies the choices and activates SLP for future launches.
-3. **Maintenance > Runtime setup** remains available for runtime updates, executable overrides and recovery.
-4. For each repository, onboard it with the `paseo-slp-onboarding` skill. It proposes `.paseo-slp/workspace-protocol.md` and the Peer pool, and shows the diff before writing.
-5. Make sure the Peer pool has at least one enabled option, then start a task by creating an agent with the SLP Supervisor or SLP Lead profile.
+1. Instale e autentique ao menos uma CLI de provedor compatível no host do daemon e abra **SLP** na barra lateral. As CLIs disponíveis são descobertas automaticamente, antes da ativação; o Codex é opcional.
+2. Em **SLP > Perfis**, escolha provedor e modelo explícito para Supervisor e Líder e selecione **Salvar perfis**. Confirme o daemon home e a janela exclusiva de configuração quando solicitado. Salvar aplica as escolhas e ativa o SLP para as próximas sessões.
+3. **Manutenção > Configuração do runtime** continua disponível para atualizar o runtime, ajustar executáveis e recuperar a instalação.
+4. Em cada repositório, use a skill `paseo-slp-onboarding` para propor `.paseo-slp/workspace-protocol.md` e o pool de Especialistas. Confira o diff antes de gravar.
+5. Verifique se existe ao menos um Especialista habilitado no pool. Inicie a tarefa com o perfil SLP Supervisor ou SLP Lead.
 
-For example: `Fix the checkout total rounding bug. Report back with the candidate and the checks you ran.`
+Exemplo de pedido: *Corrija o arredondamento do valor total no checkout. Apresente o candidato e os testes efetivamente executados.*
 
-Installing the plugin, or activating it, does not create any agent.
+Instalar ou ativar o plugin **não cria nenhum agente automaticamente**.
 
-See the [README](https://github.com/duongvm57/paseo-slp-plugin#readme) for the full setup and operating guide.
+Consulte o [guia completo](https://github.com/hugolrf/paseo-slp-plugin#readme) para informações adicionais.
 
-## Settings and limits
+## Configurações e limites
 
-- The SLP manager configures Supervisor/Lead models and the Peer pool of allowed runtimes. Engineer, Architect and Reviewer assignments come from the Lead's task brief, independently of the runtime choice.
-- Optional features are off by default: a shared communication language, one designated Peer quota fallback, Jev-assisted runtime routing, and communication supervision that assesses captured Peer handbacks and Lead handling and can alert a Supervisor.
-- A repository can pin its own Peer pool in `.paseo-slp/slp-routing.json`. A pinned pool takes precedence over the shared pool.
-- Role changes affect future launches, not sessions that are already running.
-- The plugin refuses to overwrite a provider or profile it does not own, and it stops with `RECOVERY_REQUIRED` when the configuration changed outside its journal.
-- Role rules guide agents. Repository and shell permissions still come from Paseo and the provider.
-- Antigravity supports full access only: its CLI automatically approves tools, subject to native policy denial. Thinking effort is part of the model ID. Its MCP integration supports stdio and Streamable HTTP; legacy SSE and explicit tool-policy preapproval are unsupported. Inherited native MCP services remain available; session routing does not sandbox tools. See [Antigravity support](https://github.com/duongvm57/paseo-slp-plugin/blob/main/docs/antigravity.md) for resume restrictions and evidence limits.
+- O gerenciador configura modelos do Supervisor e do Líder e o pool de provedores permitidos. O Líder define os papéis técnicos conforme cada tarefa.
+- Recursos opcionais incluem idioma compartilhado, alternativa para cota esgotada, roteamento pelo Jev e supervisão da comunicação. Para manter as respostas dos agentes em português, selecione **Português do Brasil** na configuração de idioma de comunicação do SLP; escolhas já existentes devem ser preservadas.
+- Um repositório pode fixar seu próprio pool em `.paseo-slp/slp-routing.json`, que tem precedência sobre o pool compartilhado.
+- Alterações nos papéis valem para novos agentes, não para sessões em execução.
+- O plugin não sobrescreve provedores ou perfis que não controla e interrompe alterações caso detecte configuração externa incompatível (`RECOVERY_REQUIRED`).
+- As instruções dos papéis não substituem as permissões do Paseo, dos provedores ou do sistema operacional.
+- O Antigravity aceita apenas modo de acesso completo: sua CLI pode aprovar ferramentas automaticamente, sujeita a bloqueios nativos. O esforço de raciocínio vem do ID do modelo. Sua integração MCP aceita stdio e Streamable HTTP; SSE legado não é compatível. Serviços MCP herdados continuam disponíveis e o roteamento não isola ferramentas. Veja [limites do Antigravity](https://github.com/duongvm57/paseo-slp-plugin/blob/main/docs/antigravity.md).
 
-## Data, filesystem, subprocess and network access
+## Dados, arquivos, processos e rede
 
-- **Paseo configuration:** activation patches Paseo's `config.json` to add the providers and profiles and to enable MCP injection. Deactivating removes them.
-- **Plugin state:** the plugin keeps its runtime files, journal and settings under `<daemonHome>/slp-runtime/`, including the shared Peer pool. Jev keys are stored there in files with 0600 permissions.
-- **Temporary files:** Antigravity sessions use private directories under the host's temporary directory for MCP customization and attached images, removed when the session closes, including failed opens. MCP endpoints and credentials travel in the current process environment rather than those customization files. The adapter does not edit shared Antigravity configuration or workspace customization files.
-- **Repository files:** the plugin reads `.paseo-slp/` files in repositories you onboard. It does not write your repository's routing catalog. Desk records are not stored in your repository. They live in a folder per repository inside the plugin's runtime state directory. Task integration applies a bounded change to a target repository only when the Lead invokes it, and uses Git worktrees for isolated placement.
-- **Subprocesses:** the plugin finds Node and the provider CLIs on the daemon's `PATH` and runs short version probes against them. It runs Git when a Lead dispatches or integrates a task. A desk check can run only one of three fixed classes: a ledger integrity check, the repository's generated-payload check, or `git rev-parse HEAD`, run in the candidate's checkout. It also runs the bundled offline `slp.mjs` helper for launch validation. Paseo requests each seat; for Antigravity, this plugin's provider runs `agy` for version/model discovery and sessions, plus Node relays and the session's configured stdio MCP commands.
-- **Network and credentials:** agent CLIs send prompts, code/context and tool results to the model services configured for your account. Antigravity's Streamable HTTP MCP relays send requests and configured authentication headers to the session's MCP endpoints; stdio MCP commands can use their own network connections. If you enable Jev-assisted routing or communication supervision, the configured inputs or captured communications are also sent to the Jev service you choose, either OpenRouter or the TypeSafe System One API. Review those services, permissions and costs before using them.
-- **Tracking:** the plugin does not call external trackers or connectors.
+- **Configuração do Paseo:** a ativação modifica o `config.json` para registrar provedores e perfis e habilitar ferramentas MCP. A desativação remove essas entradas.
+- **Estado do plugin:** configurações, registros e arquivos de runtime ficam em `<daemonHome>/slp-runtime/`, incluindo o pool compartilhado. Chaves do Jev usam arquivos com permissões 0600.
+- **Arquivos temporários:** sessões Antigravity utilizam pastas privadas temporárias para MCP e imagens anexadas, removidas no encerramento. Endpoints e credenciais MCP são transmitidos pelo ambiente do processo; o adaptador não altera configurações compartilhadas do Antigravity.
+- **Repositórios:** o plugin lê `.paseo-slp/`, sem gravar automaticamente o catálogo de roteamento. Os registros operacionais ficam no diretório privado de runtime do plugin. A integração de tarefas só aplica mudanças quando invocada pelo Líder e pode utilizar worktrees Git para isolamento. **Respeite sua política de diretórios antes de habilitar essa execução.**
+- **Subprocessos:** o plugin identifica Node e CLIs disponíveis no `PATH`, executa verificações curtas e pode executar Git durante atribuições e integrações. Suas verificações incorporadas são limitadas a integridade do ledger, conferência do payload e `git rev-parse HEAD`. O Antigravity utiliza `agy`, processos Node e comandos MCP configurados.
+- **Rede e credenciais:** as CLIs dos agentes enviam prompts, código e resultados aos provedores de modelos configurados na sua conta. Integrações MCP podem transmitir solicitações e cabeçalhos de autenticação aos endpoints configurados. Se habilitar Jev, dados de roteamento ou comunicação também poderão ser enviados ao OpenRouter ou à API TypeSafe System One. Avalie permissões e custos antes de usar.
+- **Rastreadores externos:** este plugin não consulta Azure, Jira ou Multica diretamente; essas integrações dependem do seu plugin `tasks` e de adaptações posteriores.
 
-## Requirements
+## Requisitos
 
-- Paseo daemon and app 0.11.0 or later (minimum supported host, not the pinned SDK version), with plugins enabled and MCP enabled.
-- A Linux or macOS daemon host. Windows is not supported.
-- Node.js 22.18 or later in the 22 line, or Node.js 23.6 or later, for native TypeScript.
-- The CLI of each provider family you use, signed in on the daemon host.
-- Antigravity requires agy 1.4.4 or newer and this manager plugin; the standalone installer does not register its providers.
+- Aplicativo e daemon Paseo 0.11.0 ou superior (host mínimo suportado, não a versão fixada do SDK), com plugins e MCP habilitados.
+- Host Linux ou macOS; Windows nativo não é suportado.
+- Node.js 22.18 ou superior da série 22, ou Node.js 23.6 ou superior, para TypeScript nativo.
+- CLIs dos provedores escolhidos instaladas e autenticadas no host.
+- Antigravity exige `agy` 1.4.4 ou superior e o plugin gerenciador; a instalação independente não registra seus provedores.

@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, realpathSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readCatalog } from '../../plugin/server/runtime/cli/routing.ts';
 import { routeDecide } from '../../plugin/server/runtime/cli/jev-routing.ts';
 export function selectionFixture(t, { mode = 'off', count = 2 } = {}) {
- const dir=mkdtempSync(join(tmpdir(),'slp-seat-selection-'));
+ const dir=realpathSync(mkdtempSync(join(tmpdir(),'slp-seat-selection-')));
  t.after(()=>rmSync(dir,{recursive:true,force:true,maxRetries:3}));
  const repository=join(dir,'repo'),home=join(dir,'home');
  mkdirSync(join(repository,'.paseo-slp'),{recursive:true});mkdirSync(join(home,'slp-runtime/state'),{recursive:true});

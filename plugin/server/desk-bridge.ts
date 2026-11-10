@@ -56,7 +56,21 @@ import {
   type MembershipValue,
 } from "./desk-store.ts";
 import { assertRealComponents, ensurePrivateDirectory } from "./kept-files.ts";
-import { classifyLockHolderProcess, parseLockHolder, readProcessIdentity, type LockHolder, type LockHolderProcess } from "./runtime/lock-holder.ts";
+import {
+  classifyLockHolderProcess,
+  createdLockFile,
+  describeLockHolder,
+  describeLockPath,
+  leftLockNote,
+  parseLockHolder,
+  readProcessIdentity,
+  relateLockHolder,
+  removeCreatedLockFile,
+  type CreatedLockCleanup,
+  type CreatedLockFile,
+  type LockHolder,
+  type LockHolderProcess,
+} from "./runtime/lock-holder.ts";
 import { recoverDeskLockAsync } from "./runtime/desk-recovery.ts";
 import { detectDaemonHome } from "./daemon-home.ts";
 import { sha256Hex } from "./config-view.ts";
@@ -509,6 +523,13 @@ export interface DeskBridgeDeps {
   /** Kernel boot/start identity; null means this host cannot prove reuse. */
   processIdentity?: (pid: number) => string | null;
   warn?: (line: string) => void;
+  /** Internal test seam — production never passes `faults`. `lockStage`
+   *  runs synchronously right after the lifecycle lock file is created
+   *  (`created`), after its holder record is written (`written`), before a
+   *  failed acquire verifies/removes its own file (`cleanup`, fd still open)
+   *  and before the release unlink (`releasing`); a hook may throw to model
+   *  an I/O failure at that point. */
+  faults?: { lockStage?: (stage: "created" | "written" | "cleanup" | "releasing", fd?: number) => void };
   /** P3-a observed capture — tests substitute a deterministic double; the
    *  default spawns the bound runtime's snapshot under 60s/32MiB. */
   capture?: (deps: {
@@ -651,7 +672,13 @@ export function createDeskBridge(deps: DeskBridgeDeps) {
   const warn = (key: string, line: string) => {
     if (warned.has(key)) return;
     warned.add(key);
-    (deps.warn ?? console.warn)(line.slice(0, 400));
+    // A failing reporting channel must never change lifecycle state, a
+    // release or a returned error — the diagnostic is best effort.
+    try {
+      (deps.warn ?? console.warn)(line.slice(0, 1200));
+    } catch {
+      /* reporting-channel failure is not the caller's problem */
+    }
   };
 
   let state: DeskBridgeState = { kind: "starting" };
@@ -765,30 +792,51 @@ export function createDeskBridge(deps: DeskBridgeDeps) {
   // lifecycle lock — O_EXCL under the reserved repo namespace
   // ---------------------------------------------------------------------
 
-  async function acquireLock(lockPath: string): Promise<
+  /** Operator step shared by every bridge-lock refusal. `desk-recover`
+   *  reclaims ONLY a holder proven dead (ESRCH or a recorded process-start
+   *  mismatch); it refuses a live pid, including a previous instance in this
+   *  very process. */
+  const BRIDGE_RECOVER_STEP = "`node bin/slp.mjs desk-recover --bridge` under maintenance authority";
+
+  async function acquireLock(lockPath: string, repoKey: string): Promise<
     | { ok: true }
     | { ok: false; code: DeskErrorCode; reason: string }
   > {
     const deadline = Date.now() + LEDGER_LIMITS.lockWaitMs;
     for (;;) {
       let fd: number | null = null;
+      let created: CreatedLockFile | null = null;
+      let cleanup: CreatedLockCleanup | null = null;
       try {
         const selfIdentity = processIdentity(process.pid);
         fd = openSync(lockPath, "wx", 0o600);
+        created = createdLockFile(fd);
+        deps.faults?.lockStage?.("created", fd);
         writeSync(
           fd,
           JSON.stringify({ pid: process.pid, instanceNonce, startedAt: now().toISOString(),
             ...(selfIdentity !== null ? { processIdentity: selfIdentity } : {}) }) + "\n",
         );
+        deps.faults?.lockStage?.("written", fd);
         fsyncSync(fd);
         lockHeld = true;
         return { ok: true };
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+          // The file this call created must not outlive the failed acquire:
+          // `lockHeld` stays false, so stop() would never release it and a
+          // later instance would meet a valid-looking holder forever. The
+          // identity check and unlink run while `fd` is still open (the
+          // finally below closes it afterwards), so the inode cannot have
+          // been reused; anything unverifiable is left and diagnosed.
+          if (fd !== null) {
+            try { deps.faults?.lockStage?.("cleanup", fd); } catch { /* test seam only */ }
+            cleanup = removeCreatedLockFile(lockPath, created);
+          }
           return {
             ok: false,
             code: "CAPABILITY_GAP",
-            reason: `bridge lock cannot be created: ${(error as Error).message}`,
+            reason: `bridge lock cannot be created: ${(error as Error).message}${cleanup === null ? "" : leftLockNote(cleanup, lockPath)}`,
           };
         }
       } finally {
@@ -800,7 +848,11 @@ export function createDeskBridge(deps: DeskBridgeDeps) {
       try {
         holder = parseLockHolder(readFileSync(lockPath));
       } catch {
-        return { ok: false, code: "RECOVERY_REQUIRED", reason: "bridge lock is unreadable" };
+        return {
+          ok: false,
+          code: "RECOVERY_REQUIRED",
+          reason: `bridge lock is unreadable — operator recovery required (${BRIDGE_RECOVER_STEP}); ${describeLockPath({ repoKey, lockPath })}`,
+        };
       }
       if (holder !== null && holder.pid === process.pid && holder.instanceNonce === instanceNonce) {
         // Re-entry by THIS instance — adopt rather than steal. A live pid
@@ -812,7 +864,7 @@ export function createDeskBridge(deps: DeskBridgeDeps) {
         return {
           ok: false,
           code: "RECOVERY_REQUIRED",
-          reason: "bridge lock holder record is malformed — operator recovery required",
+          reason: `bridge lock holder record is malformed — operator recovery required (${BRIDGE_RECOVER_STEP}); ${describeLockPath({ repoKey, lockPath })}`,
         };
       }
       const processState = holderProcess(holder);
@@ -823,17 +875,28 @@ export function createDeskBridge(deps: DeskBridgeDeps) {
         if (recovery.ok) continue; // O_EXCL still decides who binds next.
         return { ok: false, code: recovery.code, reason: recovery.message };
       }
+      const facts = () => describeLockHolder({ repoKey, lockPath, holder: holder!, nowMs: now().getTime() });
       if (processState !== "alive") {
         return {
           ok: false, code: "RECOVERY_REQUIRED",
-          reason: `bridge lock held by dead pid or uncertain identity ${holder.pid} — operator recovery required`,
+          reason: `bridge lock held by dead pid or uncertain identity ${holder.pid} — operator recovery required (${BRIDGE_RECOVER_STEP}); holder ${facts()}`,
         };
       }
       if (Date.now() >= deadline) {
+        // The lock is never removed here. Same pid with another nonce is not
+        // "another process": it is a previous or parallel instance in THIS
+        // process and may still be alive, so it is named as such.
+        const sameProcess = relateLockHolder(holder, { pid: process.pid, instanceNonce }) === "same-process-other-instance";
         return {
           ok: false,
           code: "CAPABILITY_GAP",
-          reason: `desk-busy: bridge lock held by live pid ${holder.pid} (nonce ${holder.instanceNonce}); do not respawn the bridge; tell the Human/tooling operator`,
+          reason: sameProcess
+            ? `desk-busy: bridge lock held by another bridge instance in the same process (pid ${holder.pid}; this instance is nonce ${instanceNonce}) — ` +
+              `a parallel instance, or a leftover of a previous plugin instance whose stop()/release failed or never ran — or, since pid reuse cannot be excluded without a process-start identity (Linux/WSL only), an orphan of a dead process; do not respawn the bridge; ` +
+              `it is not removed automatically and desk-recover refuses a live pid, so restart or reload the plugin/daemon that owns pid ${holder.pid} ` +
+              `(remove it by hand under maintenance authority only after proving no live bridge or store uses it); holder ${facts()}`
+            : `desk-busy: bridge lock held by live pid ${holder.pid} in another process — do not respawn the bridge; tell the Human/tooling operator; ` +
+              `never remove a live holder's lock; if that owner is gone, run ${BRIDGE_RECOVER_STEP} (it refuses a live pid); holder ${facts()}`,
         };
       }
       await sleep(LOCK_POLL_MS);
@@ -863,7 +926,24 @@ export function createDeskBridge(deps: DeskBridgeDeps) {
       );
       return;
     }
-    try { unlinkSync(path); } catch { /* already gone */ }
+    try {
+      deps.faults?.lockStage?.("releasing");
+      unlinkSync(path);
+    } catch (error) {
+      // ENOENT: already gone — the goal state, silent. Anything else leaves
+      // OUR lock behind with `lockHeld` already cleared, so say so loudly.
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        warn(
+          "release-unlink",
+          `slp: desk bridge lock could not be released and stays on disk — ${describeLockHolder({
+            repoKey: paths.repoKey,
+            lockPath: path,
+            holder,
+            nowMs: now().getTime(),
+          })}; ${(error as Error).message}; a later start in this process will see it as a same-process holder (restart the plugin/daemon or remove it by hand under maintenance authority once no live bridge uses it)`,
+        );
+      }
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -2200,7 +2280,7 @@ export function createDeskBridge(deps: DeskBridgeDeps) {
       ensurePrivateDirectory(paths.enforcementDir, platform);
       ensurePrivateDirectory(deskReposDir(stableRoot), platform);
       ensurePrivateDirectory(paths.repoDir, platform);
-      const lock = await acquireLock(paths.lockPath);
+      const lock = await acquireLock(paths.lockPath, paths.repoKey);
       if (await abortIfStopped()) {
         return;
       }

@@ -1,0 +1,1194 @@
+{
+ "none": {
+  "validate": {
+   "ok": {
+    "ok": false,
+    "paseoHome": "<T>/homes/none",
+    "mapPath": "<T>/homes/none/slp-clients/clients.json",
+    "errors": [
+     "client map is absent"
+    ]
+   }
+  },
+  "mapped": {
+   "catalog": {
+    "ok": {
+     "scope": "user",
+     "path": "<T>/homes/none/slp-runtime/state/peer-pool.json",
+     "options": [
+      "user-only"
+     ],
+     "central": null
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "none",
+     "client": null,
+     "reason": "no client map exists: historical behavior",
+     "mapPresent": false,
+     "linked": false,
+     "resolution": null
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "absent"
+    }
+   }
+  },
+  "unmapped": {
+   "catalog": {
+    "ok": {
+     "scope": "user",
+     "path": "<T>/homes/none/slp-runtime/state/peer-pool.json",
+     "options": [
+      "user-only"
+     ],
+     "central": null
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "none",
+     "client": null,
+     "reason": "no client map exists: historical behavior",
+     "mapPresent": false,
+     "linked": false,
+     "resolution": null
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "absent"
+    }
+   }
+  },
+  "local": {
+   "catalog": {
+    "ok": {
+     "scope": "repository",
+     "path": "<T>/repos/local/.paseo-slp/slp-routing.json",
+     "options": [
+      "repo-pool"
+     ],
+     "central": null
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "local",
+     "client": null,
+     "reason": "the checkout has its own .paseo-slp configuration; the map is not opened",
+     "mapPresent": false,
+     "linked": null,
+     "resolution": null
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "absent"
+    }
+   }
+  },
+  "noremote": {
+   "catalog": {
+    "ok": {
+     "scope": "user",
+     "path": "<T>/homes/none/slp-runtime/state/peer-pool.json",
+     "options": [
+      "user-only"
+     ],
+     "central": null
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "none",
+     "client": null,
+     "reason": "no client map exists: historical behavior",
+     "mapPresent": false,
+     "linked": false,
+     "resolution": null
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "absent"
+    }
+   }
+  },
+  "worktree": {
+   "catalog": {
+    "ok": {
+     "scope": "user",
+     "path": "<T>/homes/none/slp-runtime/state/peer-pool.json",
+     "options": [
+      "user-only"
+     ],
+     "central": null
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "none",
+     "client": null,
+     "reason": "no client map exists: historical behavior",
+     "mapPresent": false,
+     "linked": true,
+     "resolution": null
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "absent"
+    }
+   }
+  },
+  "plain": {
+   "catalog": {
+    "ok": {
+     "scope": "user",
+     "path": "<T>/homes/none/slp-runtime/state/peer-pool.json",
+     "options": [
+      "user-only"
+     ],
+     "central": null
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "none",
+     "client": null,
+     "reason": "no client map exists: historical behavior",
+     "mapPresent": false,
+     "linked": false,
+     "resolution": null
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "absent"
+    }
+   }
+  },
+  "subdir": {
+   "catalog": {
+    "ok": {
+     "scope": "user",
+     "path": "<T>/homes/none/slp-runtime/state/peer-pool.json",
+     "options": [
+      "user-only"
+     ],
+     "central": null
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "none",
+     "client": null,
+     "reason": "no client map exists: historical behavior",
+     "mapPresent": false,
+     "linked": false,
+     "resolution": null
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "absent"
+    }
+   }
+  },
+  "missing": {
+   "catalog": {
+    "error": {
+     "code": "ENOENT",
+     "message": "ENOENT: no such file or directory, lstat '<T>/missing'"
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "none",
+     "client": null,
+     "reason": "no client map exists: historical behavior",
+     "mapPresent": false,
+     "linked": false,
+     "resolution": null
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "absent"
+    }
+   }
+  }
+ },
+ "v1": {
+  "validate": {
+   "ok": {
+    "ok": true,
+    "paseoHome": "<T>/homes/v1",
+    "mapPath": "<T>/homes/v1/slp-clients/clients.json",
+    "mapSha256": "<SHA>",
+    "protectedRoots": [],
+    "clients": [
+     {
+      "name": "ClienteA",
+      "directory": "clienteA",
+      "referenced": true,
+      "routingSha256": "<SHA>",
+      "protocolSha256": "<SHA>",
+      "options": 1
+     }
+    ],
+    "repositories": [
+     {
+      "client": "ClienteA",
+      "project": "local",
+      "gitCommonDir": "<T>/repos/local/.git"
+     },
+     {
+      "client": "ClienteA",
+      "project": "grupo/api",
+      "gitCommonDir": "<T>/repos/mapped/.git"
+     }
+    ],
+    "errors": []
+   }
+  },
+  "mapped": {
+   "catalog": {
+    "ok": {
+     "scope": "central:ClienteA",
+     "path": "<T>/homes/v1/slp-clients/clients/clienteA/.paseo-slp/slp-routing.json",
+     "options": [
+      "client-a"
+     ],
+     "central": {
+      "client": "ClienteA",
+      "directory": "clienteA"
+     }
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "central",
+     "client": "ClienteA",
+     "reason": "the repository is listed in the client map for ClienteA (origin verified)",
+     "mapPresent": true,
+     "linked": false,
+     "resolution": {
+      "kind": "central",
+      "client": "ClienteA"
+     }
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "mapped",
+     "client": "ClienteA"
+    }
+   }
+  },
+  "unmapped": {
+   "catalog": {
+    "ok": {
+     "scope": "user",
+     "path": "<T>/homes/v1/slp-runtime/state/peer-pool.json",
+     "options": [
+      "user-only"
+     ],
+     "central": null
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "none",
+     "client": null,
+     "reason": "the repository is not listed in the client map and lies outside the protected roots",
+     "mapPresent": true,
+     "linked": false,
+     "resolution": null
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "unmapped"
+    }
+   }
+  },
+  "local": {
+   "catalog": {
+    "ok": {
+     "scope": "repository",
+     "path": "<T>/repos/local/.paseo-slp/slp-routing.json",
+     "options": [
+      "repo-pool"
+     ],
+     "central": null
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "local",
+     "client": null,
+     "reason": "the checkout has its own .paseo-slp configuration; the map is not opened",
+     "mapPresent": true,
+     "linked": null,
+     "resolution": null
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "mapped",
+     "client": "ClienteA"
+    }
+   }
+  },
+  "noremote": {
+   "catalog": {
+    "ok": {
+     "scope": "user",
+     "path": "<T>/homes/v1/slp-runtime/state/peer-pool.json",
+     "options": [
+      "user-only"
+     ],
+     "central": null
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "none",
+     "client": null,
+     "reason": "the repository is not listed in the client map and lies outside the protected roots",
+     "mapPresent": true,
+     "linked": false,
+     "resolution": null
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "unmapped"
+    }
+   }
+  },
+  "worktree": {
+   "catalog": {
+    "ok": {
+     "scope": "central:ClienteA",
+     "path": "<T>/homes/v1/slp-clients/clients/clienteA/.paseo-slp/slp-routing.json",
+     "options": [
+      "client-a"
+     ],
+     "central": {
+      "client": "ClienteA",
+      "directory": "clienteA"
+     }
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "central",
+     "client": "ClienteA",
+     "reason": "the repository is listed in the client map for ClienteA (origin verified)",
+     "mapPresent": true,
+     "linked": true,
+     "resolution": {
+      "kind": "central",
+      "client": "ClienteA"
+     }
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "mapped",
+     "client": "ClienteA"
+    }
+   }
+  },
+  "plain": {
+   "catalog": {
+    "ok": {
+     "scope": "user",
+     "path": "<T>/homes/v1/slp-runtime/state/peer-pool.json",
+     "options": [
+      "user-only"
+     ],
+     "central": null
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "none",
+     "client": null,
+     "reason": "the repository is not listed in the client map and lies outside the protected roots",
+     "mapPresent": true,
+     "linked": false,
+     "resolution": null
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "unmapped"
+    }
+   }
+  },
+  "subdir": {
+   "catalog": {
+    "ok": {
+     "scope": "central:ClienteA",
+     "path": "<T>/homes/v1/slp-clients/clients/clienteA/.paseo-slp/slp-routing.json",
+     "options": [
+      "client-a"
+     ],
+     "central": {
+      "client": "ClienteA",
+      "directory": "clienteA"
+     }
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "central",
+     "client": "ClienteA",
+     "reason": "the repository is listed in the client map for ClienteA (origin verified)",
+     "mapPresent": true,
+     "linked": false,
+     "resolution": {
+      "kind": "central",
+      "client": "ClienteA"
+     }
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "mapped",
+     "client": "ClienteA"
+    }
+   }
+  },
+  "missing": {
+   "catalog": {
+    "error": {
+     "code": "ENOENT",
+     "message": "ENOENT: no such file or directory, lstat '<T>/missing'"
+    }
+   },
+   "trace": {
+    "error": {
+     "code": "CLIENT_UNMAPPED",
+     "message": "checkout directory cannot be resolved while a client map is present"
+    }
+   },
+   "lookup": {
+    "error": {
+     "code": "CLIENT_UNMAPPED",
+     "message": "checkout directory cannot be resolved while a client map is present"
+    }
+   }
+  }
+ },
+ "v1-protected": {
+  "validate": {
+   "ok": {
+    "ok": true,
+    "paseoHome": "<T>/homes/v1-protected",
+    "mapPath": "<T>/homes/v1-protected/slp-clients/clients.json",
+    "mapSha256": "<SHA>",
+    "protectedRoots": [
+     "<T>/repos"
+    ],
+    "clients": [
+     {
+      "name": "ClienteA",
+      "directory": "clienteA",
+      "referenced": true,
+      "routingSha256": "<SHA>",
+      "protocolSha256": "<SHA>",
+      "options": 1
+     }
+    ],
+    "repositories": [
+     {
+      "client": "ClienteA",
+      "project": "local",
+      "gitCommonDir": "<T>/repos/local/.git"
+     },
+     {
+      "client": "ClienteA",
+      "project": "grupo/api",
+      "gitCommonDir": "<T>/repos/mapped/.git"
+     }
+    ],
+    "errors": []
+   }
+  },
+  "mapped": {
+   "catalog": {
+    "ok": {
+     "scope": "central:ClienteA",
+     "path": "<T>/homes/v1-protected/slp-clients/clients/clienteA/.paseo-slp/slp-routing.json",
+     "options": [
+      "client-a"
+     ],
+     "central": {
+      "client": "ClienteA",
+      "directory": "clienteA"
+     }
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "central",
+     "client": "ClienteA",
+     "reason": "the repository is listed in the client map for ClienteA (origin verified)",
+     "mapPresent": true,
+     "linked": false,
+     "resolution": {
+      "kind": "central",
+      "client": "ClienteA"
+     }
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "mapped",
+     "client": "ClienteA"
+    }
+   }
+  },
+  "unmapped": {
+   "catalog": {
+    "error": {
+     "code": "CLIENT_UNMAPPED",
+     "message": "protected repository has no client mapping; no user-pool fallback"
+    }
+   },
+   "trace": {
+    "error": {
+     "code": "CLIENT_UNMAPPED",
+     "message": "protected repository has no client mapping; no user-pool fallback"
+    }
+   },
+   "lookup": {
+    "error": {
+     "code": "CLIENT_UNMAPPED",
+     "message": "protected repository has no client mapping; no user-pool fallback"
+    }
+   }
+  },
+  "local": {
+   "catalog": {
+    "ok": {
+     "scope": "repository",
+     "path": "<T>/repos/local/.paseo-slp/slp-routing.json",
+     "options": [
+      "repo-pool"
+     ],
+     "central": null
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "local",
+     "client": null,
+     "reason": "the checkout has its own .paseo-slp configuration; the map is not opened",
+     "mapPresent": true,
+     "linked": null,
+     "resolution": null
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "mapped",
+     "client": "ClienteA"
+    }
+   }
+  },
+  "noremote": {
+   "catalog": {
+    "error": {
+     "code": "CLIENT_UNMAPPED",
+     "message": "protected repository has no client mapping; no user-pool fallback"
+    }
+   },
+   "trace": {
+    "error": {
+     "code": "CLIENT_UNMAPPED",
+     "message": "protected repository has no client mapping; no user-pool fallback"
+    }
+   },
+   "lookup": {
+    "error": {
+     "code": "CLIENT_UNMAPPED",
+     "message": "protected repository has no client mapping; no user-pool fallback"
+    }
+   }
+  },
+  "worktree": {
+   "catalog": {
+    "ok": {
+     "scope": "central:ClienteA",
+     "path": "<T>/homes/v1-protected/slp-clients/clients/clienteA/.paseo-slp/slp-routing.json",
+     "options": [
+      "client-a"
+     ],
+     "central": {
+      "client": "ClienteA",
+      "directory": "clienteA"
+     }
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "central",
+     "client": "ClienteA",
+     "reason": "the repository is listed in the client map for ClienteA (origin verified)",
+     "mapPresent": true,
+     "linked": true,
+     "resolution": {
+      "kind": "central",
+      "client": "ClienteA"
+     }
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "mapped",
+     "client": "ClienteA"
+    }
+   }
+  },
+  "plain": {
+   "catalog": {
+    "ok": {
+     "scope": "user",
+     "path": "<T>/homes/v1-protected/slp-runtime/state/peer-pool.json",
+     "options": [
+      "user-only"
+     ],
+     "central": null
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "none",
+     "client": null,
+     "reason": "the repository is not listed in the client map and lies outside the protected roots",
+     "mapPresent": true,
+     "linked": false,
+     "resolution": null
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "unmapped"
+    }
+   }
+  },
+  "subdir": {
+   "catalog": {
+    "ok": {
+     "scope": "central:ClienteA",
+     "path": "<T>/homes/v1-protected/slp-clients/clients/clienteA/.paseo-slp/slp-routing.json",
+     "options": [
+      "client-a"
+     ],
+     "central": {
+      "client": "ClienteA",
+      "directory": "clienteA"
+     }
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "central",
+     "client": "ClienteA",
+     "reason": "the repository is listed in the client map for ClienteA (origin verified)",
+     "mapPresent": true,
+     "linked": false,
+     "resolution": {
+      "kind": "central",
+      "client": "ClienteA"
+     }
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "mapped",
+     "client": "ClienteA"
+    }
+   }
+  },
+  "missing": {
+   "catalog": {
+    "error": {
+     "code": "ENOENT",
+     "message": "ENOENT: no such file or directory, lstat '<T>/missing'"
+    }
+   },
+   "trace": {
+    "error": {
+     "code": "CLIENT_UNMAPPED",
+     "message": "checkout directory cannot be resolved while a client map is present"
+    }
+   },
+   "lookup": {
+    "error": {
+     "code": "CLIENT_UNMAPPED",
+     "message": "checkout directory cannot be resolved while a client map is present"
+    }
+   }
+  }
+ },
+ "v2-lenient": {
+  "validate": {
+   "ok": {
+    "ok": true,
+    "paseoHome": "<T>/homes/v2-lenient",
+    "mapPath": "<T>/homes/v2-lenient/slp-clients/clients.json",
+    "mapSha256": "<SHA>",
+    "mapVersion": 2,
+    "strict": false,
+    "protectedRoots": [],
+    "clients": [
+     {
+      "name": "ClienteA",
+      "directory": "clienteA",
+      "referenced": true,
+      "rulesSha256": null,
+      "routingSha256": "<SHA>",
+      "protocolSha256": "<SHA>",
+      "options": 1
+     }
+    ],
+    "repositories": [
+     {
+      "client": "ClienteA",
+      "project": "local",
+      "gitCommonDir": "<T>/repos/local/.git",
+      "localOnly": false
+     },
+     {
+      "client": "ClienteA",
+      "project": "grupo/api",
+      "gitCommonDir": "<T>/repos/mapped/.git",
+      "localOnly": false
+     }
+    ],
+    "errors": []
+   }
+  },
+  "mapped": {
+   "catalog": {
+    "ok": {
+     "scope": "central:ClienteA",
+     "path": "<T>/homes/v2-lenient/slp-clients/clients/clienteA/.paseo-slp/slp-routing.json",
+     "options": [
+      "client-a"
+     ],
+     "central": {
+      "client": "ClienteA",
+      "directory": "clienteA"
+     }
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "central",
+     "client": "ClienteA",
+     "reason": "the repository is listed in the client map for ClienteA (origin verified)",
+     "mapPresent": true,
+     "linked": false,
+     "resolution": {
+      "kind": "central",
+      "client": "ClienteA"
+     }
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "mapped",
+     "client": "ClienteA"
+    }
+   }
+  },
+  "unmapped": {
+   "catalog": {
+    "ok": {
+     "scope": "user",
+     "path": "<T>/homes/v2-lenient/slp-runtime/state/peer-pool.json",
+     "options": [
+      "user-only"
+     ],
+     "central": null
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "none",
+     "client": null,
+     "reason": "the repository is not listed in the client map and lies outside the protected roots",
+     "mapPresent": true,
+     "linked": false,
+     "resolution": null
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "unmapped"
+    }
+   }
+  },
+  "local": {
+   "catalog": {
+    "ok": {
+     "scope": "repository",
+     "path": "<T>/repos/local/.paseo-slp/slp-routing.json",
+     "options": [
+      "repo-pool"
+     ],
+     "central": null
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "local",
+     "client": "ClienteA",
+     "reason": "the checkout has its own .paseo-slp configuration, which wins the source; the map binds it to ClienteA",
+     "mapPresent": true,
+     "linked": null,
+     "resolution": null
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "mapped",
+     "client": "ClienteA"
+    }
+   }
+  },
+  "noremote": {
+   "catalog": {
+    "ok": {
+     "scope": "user",
+     "path": "<T>/homes/v2-lenient/slp-runtime/state/peer-pool.json",
+     "options": [
+      "user-only"
+     ],
+     "central": null
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "none",
+     "client": null,
+     "reason": "the repository is not listed in the client map and lies outside the protected roots",
+     "mapPresent": true,
+     "linked": false,
+     "resolution": null
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "unmapped"
+    }
+   }
+  },
+  "worktree": {
+   "catalog": {
+    "ok": {
+     "scope": "central:ClienteA",
+     "path": "<T>/homes/v2-lenient/slp-clients/clients/clienteA/.paseo-slp/slp-routing.json",
+     "options": [
+      "client-a"
+     ],
+     "central": {
+      "client": "ClienteA",
+      "directory": "clienteA"
+     }
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "central",
+     "client": "ClienteA",
+     "reason": "the repository is listed in the client map for ClienteA (origin verified)",
+     "mapPresent": true,
+     "linked": true,
+     "resolution": {
+      "kind": "central",
+      "client": "ClienteA"
+     }
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "mapped",
+     "client": "ClienteA"
+    }
+   }
+  },
+  "plain": {
+   "catalog": {
+    "ok": {
+     "scope": "user",
+     "path": "<T>/homes/v2-lenient/slp-runtime/state/peer-pool.json",
+     "options": [
+      "user-only"
+     ],
+     "central": null
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "none",
+     "client": null,
+     "reason": "the repository is not listed in the client map and lies outside the protected roots",
+     "mapPresent": true,
+     "linked": false,
+     "resolution": null
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "unmapped"
+    }
+   }
+  },
+  "subdir": {
+   "catalog": {
+    "ok": {
+     "scope": "central:ClienteA",
+     "path": "<T>/homes/v2-lenient/slp-clients/clients/clienteA/.paseo-slp/slp-routing.json",
+     "options": [
+      "client-a"
+     ],
+     "central": {
+      "client": "ClienteA",
+      "directory": "clienteA"
+     }
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "central",
+     "client": "ClienteA",
+     "reason": "the repository is listed in the client map for ClienteA (origin verified)",
+     "mapPresent": true,
+     "linked": false,
+     "resolution": {
+      "kind": "central",
+      "client": "ClienteA"
+     }
+    }
+   },
+   "lookup": {
+    "ok": {
+     "state": "mapped",
+     "client": "ClienteA"
+    }
+   }
+  },
+  "missing": {
+   "catalog": {
+    "error": {
+     "code": "ENOENT",
+     "message": "ENOENT: no such file or directory, lstat '<T>/missing'"
+    }
+   },
+   "trace": {
+    "error": {
+     "code": "CLIENT_UNMAPPED",
+     "message": "checkout directory cannot be resolved while a client map is present"
+    }
+   },
+   "lookup": {
+    "error": {
+     "code": "CLIENT_UNMAPPED",
+     "message": "checkout directory cannot be resolved while a client map is present"
+    }
+   }
+  }
+ },
+ "invalid": {
+  "validate": {
+   "ok": {
+    "ok": false,
+    "paseoHome": "<T>/homes/invalid",
+    "mapPath": "<T>/homes/invalid/slp-clients/clients.json",
+    "errors": [
+     "client map is not valid JSON"
+    ]
+   }
+  },
+  "mapped": {
+   "catalog": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   },
+   "trace": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   },
+   "lookup": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   }
+  },
+  "unmapped": {
+   "catalog": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   },
+   "trace": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   },
+   "lookup": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   }
+  },
+  "local": {
+   "catalog": {
+    "ok": {
+     "scope": "repository",
+     "path": "<T>/repos/local/.paseo-slp/slp-routing.json",
+     "options": [
+      "repo-pool"
+     ],
+     "central": null
+    }
+   },
+   "trace": {
+    "ok": {
+     "decidedBy": "local",
+     "client": null,
+     "reason": "the checkout has its own .paseo-slp configuration; the map is not opened",
+     "mapPresent": true,
+     "linked": null,
+     "resolution": null
+    }
+   },
+   "lookup": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   }
+  },
+  "noremote": {
+   "catalog": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   },
+   "trace": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   },
+   "lookup": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   }
+  },
+  "worktree": {
+   "catalog": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   },
+   "trace": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   },
+   "lookup": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   }
+  },
+  "plain": {
+   "catalog": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   },
+   "trace": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   },
+   "lookup": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   }
+  },
+  "subdir": {
+   "catalog": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   },
+   "trace": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   },
+   "lookup": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   }
+  },
+  "missing": {
+   "catalog": {
+    "error": {
+     "code": "ENOENT",
+     "message": "ENOENT: no such file or directory, lstat '<T>/missing'"
+    }
+   },
+   "trace": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   },
+   "lookup": {
+    "error": {
+     "code": "CLIENT_MAP_INVALID",
+     "message": "client map is not valid JSON"
+    }
+   }
+  }
+ }
+}

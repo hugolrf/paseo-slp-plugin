@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync, readdirSync } from 'node:fs';
+import { mkdtempSync, realpathSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { canonicalSha256 } from '../plugin/server/config-view.ts';
@@ -16,9 +16,14 @@ import { install } from '../plugin/server/runtime/cli/package.ts';
 import { fileURLToPath } from 'node:url';
 
 function fixture(t) {
-  const root = mkdtempSync(join(tmpdir(), 'slp-formation-'));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'slp-formation-')));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const stableRoot = join(root, 'slp-runtime'); mkdirSync(stableRoot);
+  // An ordinary managed checkout must carry a local protocol source. The
+  // security boundary intentionally rejects orphaned worktree sources.
+  mkdirSync(join(root, '.paseo-slp'));
+  writeFileSync(join(root, '.paseo-slp', 'workspace-protocol.md'),
+    '# Fixture protocol\nLocal seat formation is authorized for tests only.\n');
   const row = memberRow('formation-parent', {}, { agentId: 'parent', role: 'lead', createCwd: root, workspaceId: 'workspace' });
   const input = { requestId: 'form', role: 'lead', taskLabel: 'bounded', assignment: 'Orient and report.', grantRef: 'human:form' };
   const plan = { create: { provider: 'slp-codex-lead/model/variant', title: 'Lead bounded', workspaceId: 'workspace',

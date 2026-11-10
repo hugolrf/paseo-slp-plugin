@@ -148,8 +148,9 @@ test('native work panel distinguishes absent state, legacy context and unavailab
   assert.deepEqual(contracts, ['get-workspace-workflow']);
   await act(async () => reads.calls[0].resolve(response({ state: 'absent', assignments: [], view: null,
     target: { daemonHome: '/verified/home', workspaceDirectory: '/workspace/selected', repoKey: 'measured-repo' } })));
-  assert.match(text(), /No desk ledger/);
-  assert.match(text(), /not represented here/);
+  assert.match(text(), /Equipe ainda não iniciada neste repositório/);
+  assert.match(text(), /Inicie um Supervisor aqui/);
+  assert.doesNotMatch(text(), /Nenhum ledger da mesa/);
   assert.doesNotMatch(text(), /\/verified\/home/);
   const disclosure = renderer.root.findAll(node => typeof node.props.onPress === 'function' && node.props.accessibilityState?.expanded === false);
   assert.equal(disclosure.length, 1);

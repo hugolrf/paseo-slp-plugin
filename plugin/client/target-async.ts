@@ -54,7 +54,9 @@ export function useTargetSnapshot<T>(target: TargetValue | null, key: string | n
   const reload = async (forTarget: TargetValue) => {
     // Both target lifetime and read ordering own completion: a manual read
     // supersedes an older initial/manual read in the same target session.
-    if (key !== targetKey(forTarget)) return null;
+    // A composite key (`<target>|<scope>`) is allowed: it belongs to the same
+    // target and is built deliberately by the owner of the scope.
+    if (key !== targetKey(forTarget) && !(key ?? "").startsWith(`${targetKey(forTarget)}|`)) return null;
     const ticket = capture();
     if (!ticket.isCurrent()) return null;
     const issued = ++readSequence.current;

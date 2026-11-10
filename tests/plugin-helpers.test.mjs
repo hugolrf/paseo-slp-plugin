@@ -69,6 +69,21 @@ test('unmanaged role bundle keeps the historical rendering and ordering', t => {
   assert.ok(common < role && role < delegation);
 });
 
+test('autonomy remains in the repository protocol and role bundle reads the protocol', t => {
+  const dir = fixture(t), installed = join(dir, 'release');
+  install(root, installed);
+  const supervisor = roleBundle(installed, 'supervisor', {});
+  const lead = roleBundle(installed, 'lead', {});
+  assert.match(supervisor.instructions, /read \.paseo-slp\/workspace-protocol\.md/);
+  assert.match(lead.instructions, /Read \.paseo-slp\/workspace-protocol\.md/);
+  assert.match(lead.instructions, /references\/review-gates\.md/);
+  assert.match(supervisor.instructions, /Supervisor assignments state outcome and authority/);
+  assert.match(lead.instructions, /delegation procedure/);
+  assert.doesNotMatch(supervisor.instructions, /Equipes — execução contínua/);
+  assert.doesNotMatch(lead.instructions, /Equipes — execução contínua/);
+  assert.deepEqual(roleBundle(installed, 'peer', {}).parts, ['common.md', 'roles/peer.md']);
+});
+
 test('managed bundle renders verified Node, the stable runtime CLI and explicit home', t => {
   const dir = fixture(t), installed = join(dir, 'release');
   install(root, installed);

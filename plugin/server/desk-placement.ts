@@ -4,6 +4,7 @@
 // except that a Supervisor may place a Lead in another repository's existing
 // workspace; that Lead registers in, and is pinned to, the target repository.
 import { closeSync, constants, fstatSync, openSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { DeskSeatCreateInputValue } from "../shared/delegation.ts";
@@ -11,6 +12,7 @@ import type { DeskRejectionValue } from "../shared/enforcement.ts";
 import type { MembershipValue } from "./desk-store.ts";
 import { canonicalSha256 } from "./config-view.ts";
 import { TaskRepositoryMismatchError } from "./desk-task-access.ts";
+import { ClientMapError, CLIENT_FILES, bindingInfo, formationBindingOf, ladderBinding, lookupClient, readClientSource, type FormationBinding } from "./runtime/cli/clients.ts";
 import { createTaskGitIo, type TaskGitIo, type TaskWorkspaceCreateOptions, type TaskAgentHandle } from "./desk-task-execution-host.ts";
 import { TaskHostWaitExpired } from "./desk-task-host.ts";
 
@@ -28,9 +30,16 @@ export type FormationWorkspaceApi = { workspaces: {
   ref(id: string): FormationWorkspaceHandle;
   open(input: { cwd: string; requestId?: string }): Promise<FormationWorkspaceHandle>;
 } };
+/** Set when the routing/protocol source is a client directory of the central
+ * client map instead of a checkout: `repository` is then that directory and
+ * `head` is the canonical hash of this pin (equality only, never a Git HEAD). */
+export type FormationCentralPin = { client: string; mapSha256: string; directory: string };
 export type FormationSourcePin = {
   repository: string; gitCommonDir: string; head: string;
   configuration: Record<string, string | null>;
+  central?: FormationCentralPin;
+  /** Client binding from a version 2 map (client, map hash, hash of the rules rendered for THAT client). */
+  binding?: FormationBinding;
 };
 export type FormationTargetPin = {
   workspaceId: string; cwd: string; head: string; gitCommonDir: string;
@@ -88,7 +97,10 @@ function directory(value: string): string {
 export function createFormationPlacement(deps: {
   repo: { gitCommonDir: string }; host: () => FormationWorkspaceApi | null; git?: Git;
   budgets?: { readMs: number; effectMs: number };
+  /** Daemon home holding slp-clients/; defaults to PASEO_HOME or ~/.paseo. */
+  paseoHome?: string;
 }) {
+  const home = deps.paseoHome ?? (process.env.PASEO_HOME || join(homedir(), ".paseo"));
   const git = deps.git ?? createTaskGitIo();
   const budgets = deps.budgets ?? { readMs: 8000, effectMs: 20000 };
   if (!Object.values(budgets).every(n => Number.isSafeInteger(n) && n > 0)) throw new Error("invalid formation wait budget");
@@ -118,29 +130,63 @@ export function createFormationPlacement(deps: {
     }
     return value;
   };
-  const locateSource = async (start: string, repo = deps.repo.gitCommonDir) => {
+  // Central client map rung. Reached only when neither the checkout nor its
+  // main checkout carries configuration. Any map defect, protected-root
+  // violation or identity drift blocks; an absent map or an unmapped
+  // repository outside the protected roots reports null (historical path).
+  const centralRung = (top: string, repo: string) => {
+    try {
+      const found = lookupClient({ home, cwd: top, gitCommonDir: repo });
+      if (found.state !== "mapped") return null;
+      const source = readClientSource(found.loaded, found.client);
+      const configuration = Object.fromEntries(CLIENT_FILES.map(name => [name, canonicalSha256(source.files[name].text)]));
+      const central: FormationCentralPin = { client: source.client, mapSha256: source.mapSha256, directory: source.directory };
+      return { repository: directory(source.repository), configuration, inherited: true, central, binding: formationBindingOf(bindingInfo(found)) };
+    } catch (error) {
+      if (error instanceof ClientMapError) throw new FormationPlacementError("CAPABILITY_GAP", `central client map blocks formation (${error.code}): ${error.message}; no user-pool fallback`);
+      throw error;
+    }
+  };
+  // The checkout's own (or its main checkout's) configuration still wins the
+  // SOURCE; the client binding rides on top of it. Under a valid strict map a
+  // project with no client blocks here too; a version 1 / absent / invalid map
+  // keeps today's path (no binding, no block).
+  const bindingRung = (top: string, repo: string): FormationBinding | undefined => {
+    try { return formationBindingOf(ladderBinding({ home, cwd: top, gitCommonDir: repo })); }
+    catch (error) {
+      if (error instanceof ClientMapError) throw new FormationPlacementError("CAPABILITY_GAP", `central client map blocks formation (${error.code}): ${error.message}; no user-pool fallback`);
+      throw error;
+    }
+  };
+  type Located = { repository: string; configuration: Record<string, string | null>; inherited: boolean; central?: FormationCentralPin; binding?: FormationBinding };
+  const locateSource = async (start: string, repo = deps.repo.gitCommonDir): Promise<Located> => {
     const cwd = directory(start); await common(cwd, repo);
     const top = directory(await git.top(cwd)); await common(top, repo);
     const local = configuration(top);
     // Preserve a checkout's own configuration (including protocol-only user
     // pools). A linked checkout lacking both files inherits only its same-Git
     // main checkout, never an unrelated ancestor or the user pool by accident.
-    if (Object.values(local).some(value => value !== null)) return { repository: top, configuration: local, inherited: false };
+    if (Object.values(local).some(value => value !== null)) { const binding = bindingRung(top, repo); return { repository: top, configuration: local, inherited: false, ...(binding ? { binding } : {}) }; }
     const main = dirname(repo);
-    if (top === main) return { repository: top, configuration: local, inherited: false };
+    if (top === main) return centralRung(top, repo) ?? { repository: top, configuration: local, inherited: false };
     try {
       const repository = directory(main); await common(repository, repo);
       if (directory(await git.top(repository)) !== repository) throw new Error("not the main checkout");
       const pins = configuration(repository);
-      if (Object.values(pins).some(value => value !== null)) return { repository, configuration: pins, inherited: true };
+      if (Object.values(pins).some(value => value !== null)) { const binding = bindingRung(top, repo); return { repository, configuration: pins, inherited: true, ...(binding ? { binding } : {}) }; }
     } catch (error) { if (error instanceof FormationPlacementError && error.code === "ROUTE_DRIFT") throw error; }
-    throw new FormationPlacementError("CAPABILITY_GAP", "linked checkout has no trustworthy same-repository configuration source; restore the main checkout routing/protocol configuration before formation; no implicit user-pool fallback");
+    const viaCentral = centralRung(top, repo);
+    if (viaCentral !== null) return viaCentral;
+    throw new FormationPlacementError("CAPABILITY_GAP", "linked checkout has no trustworthy same-repository configuration source; restore the main checkout routing/protocol configuration or map the repository in the central client map before formation; no implicit user-pool fallback");
   };
-  const sourceAt = async (start: string, repo = deps.repo.gitCommonDir): Promise<FormationSourcePin> => {
-    const located = await locateSource(start, repo);
-    return { repository: located.repository, gitCommonDir: repo,
-      head: await head(located.repository), configuration: located.configuration };
-  };
+  const pinOf = async (located: Located, repo: string): Promise<FormationSourcePin> => ({
+    repository: located.repository, gitCommonDir: repo,
+    head: located.central ? canonicalSha256(["central", located.central, located.configuration]) : await head(located.repository),
+    configuration: located.configuration, ...(located.central ? { central: located.central } : {}),
+    ...(located.binding ? { binding: located.binding } : {}),
+  });
+  const sourceAt = async (start: string, repo = deps.repo.gitCommonDir): Promise<FormationSourcePin> =>
+    pinOf(await locateSource(start, repo), repo);
   const source = (row: MembershipValue) => sourceAt(row.createCwd);
   // A pin outside the caller's repository exists only for a Supervisor caller;
   // its source is re-located from the target workspace, never the caller.
@@ -229,8 +275,7 @@ export function createFormationPlacement(deps: {
     async inheritedSource(row: MembershipValue): Promise<FormationSourcePin | undefined> {
       const located = await locateSource(row.createCwd);
       observedProtocolRepository = located.repository;
-      return located.inherited ? { repository: located.repository, gitCommonDir: deps.repo.gitCommonDir,
-        head: await head(located.repository), configuration: located.configuration } : undefined;
+      return located.inherited ? pinOf(located, deps.repo.gitCommonDir) : undefined;
     },
     async verifySource(row: MembershipValue, pin: FormationSourcePin) {
       if (canonicalSha256(await source(row)) !== canonicalSha256(pin)) {

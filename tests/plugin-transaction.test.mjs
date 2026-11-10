@@ -147,6 +147,83 @@ test('0.12 custom TTS voices survive unrelated config planning; empty voices sti
   }
 });
 
+test('Paseo 0.14 speech endpoint credentials remain compatible without revealing or stripping fields', () => {
+  const speech = { provider: 'openai', apiKey: 'synthetic-test-key', baseUrl: 'https://voice.example.test/v1', model: 'test-model' };
+  const config = { version: 1, features: {
+    dictation: { stt: { ...speech, language: 'pt' } },
+    voiceMode: { enabled: true, stt: { ...speech, language: 'pt' }, tts: { ...speech, voice: 'alloy' } },
+  } };
+  assert.doesNotThrow(() => assertPersistedCompatible(config));
+  for (const feature of ['dictation', 'voiceMode']) {
+    const bad = structuredClone(config);
+    bad.features[feature].stt.unrecognizedSpeechField = 'unknown';
+    assert.throws(() => assertPersistedCompatible(bad), error =>
+      error.code === 'SCHEMA_LOSS' && !error.message.includes('synthetic-test-key'));
+  }
+  const badTts = structuredClone(config);
+  badTts.features.voiceMode.tts.baseUrl = '';
+  assert.throws(() => assertPersistedCompatible(badTts), error => error.code === 'SCHEMA_LOSS');
+});
+
+test('retire uninstalled, externally disabled Antigravity during explicit Claude rebind', async t => {
+  const { home, binaries, daemon, deps } = await makePluginFixture(t);
+  const manager = createManager(deps);
+  const initial = await manager.activate(activateInput(home, deps.payload, randomUUID()), daemon);
+  assert.equal((await waitTerminal(manager, home, initial.operation.operationId, daemon)).state, 'ACTIVE');
+
+  const config = readConfigJson(home);
+  for (const role of ['supervisor', 'lead', 'peer']) config.agents.providers['slp-antigravity-' + role].enabled = false;
+  writeFileSync(join(home, 'config.json'), JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
+  rmSync(binaries.antigravity);
+  writeFileSync(join(home, 'slp-runtime', 'state', 'role-routing.json'), JSON.stringify({
+    schemaVersion: 1,
+    supervisor: { family: 'claude', model: 'claude-sonnet-5-5' },
+    lead: { family: 'claude', model: 'claude-opus-5-5' },
+  }));
+
+  const freshDaemon = await makeDaemon(t, home);
+  const manager2 = createManager(makeDeps({ payload: deps.payload, execOpts: { binaries } }));
+  const update = await manager2.activate(activateInput(home, deps.payload, randomUUID()), freshDaemon);
+  const done = await waitTerminal(manager2, home, update.operation.operationId, freshDaemon);
+  assert.equal(done.state, 'ACTIVE', JSON.stringify(done.conflicts));
+  assert.equal(done.operation.outcome, 'succeeded', JSON.stringify(done.conflicts));
+  const result = readConfigJson(home);
+  assert.equal(result.daemon.agentProfiles.find(p => p.id === 'slp-supervisor').provider, 'slp-claude-supervisor');
+  assert.equal(result.daemon.agentProfiles.find(p => p.id === 'slp-lead').provider, 'slp-claude-lead');
+  assert.equal(result.daemon.agentProfiles.find(p => p.id === 'slp-supervisor').model, 'claude-sonnet-5-5');
+  assert.equal(result.daemon.agentProfiles.find(p => p.id === 'slp-lead').model, 'claude-opus-5-5');
+  assert.equal(result.agents.providers['slp-antigravity-supervisor'], undefined);
+  assert.equal(result.agents.providers['slp-antigravity-lead'], undefined);
+  assert.equal(result.agents.providers['slp-antigravity-peer'].enabled, false);
+  assert.equal(readReceipt(home).binding.owned.providers['slp-antigravity-peer'].value.enabled, false);
+  assert.equal(readReceipt(home).binding.owned.providers['slp-antigravity-supervisor'].present, false);
+});
+
+test('retirement rejects modified providers and still-reachable Antigravity binaries', async t => {
+  for (const mode of ['extra-field', 'available-binary', 'no-explicit-routing']) {
+    const { home, binaries, daemon, deps } = await makePluginFixture(t);
+    const manager = createManager(deps);
+    const original = await manager.activate(activateInput(home, deps.payload, randomUUID()), daemon);
+    assert.equal((await waitTerminal(manager, home, original.operation.operationId, daemon)).state, 'ACTIVE');
+    const config = readConfigJson(home);
+    for (const role of ['supervisor', 'lead', 'peer']) config.agents.providers['slp-antigravity-' + role].enabled = false;
+    if (mode === 'extra-field') config.agents.providers['slp-antigravity-lead'].label = 'tampered label';
+    writeFileSync(join(home, 'config.json'), JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
+    if (mode !== 'available-binary') rmSync(binaries.antigravity);
+    if (mode !== 'no-explicit-routing') writeFileSync(join(home, 'slp-runtime', 'state', 'role-routing.json'), JSON.stringify({
+      schemaVersion: 1, supervisor: { family: 'claude', model: 'claude-sonnet-5-5' },
+      lead: { family: 'claude', model: 'claude-opus-5-5' },
+    }));
+    const freshDaemon = await makeDaemon(t, home);
+    const manager2 = createManager(makeDeps({ payload: deps.payload, execOpts: { binaries } }));
+    const update = await manager2.activate(activateInput(home, deps.payload, randomUUID()), freshDaemon);
+    const done = await waitTerminal(manager2, home, update.operation.operationId, freshDaemon);
+    assert.equal(done.operation.outcome, 'failed', mode);
+    assert.ok(opConflicts(home, update.operation.operationId).includes('OWNERSHIP_DRIFT'), mode);
+    assert.equal(freshDaemon.patchCalls.length, 0, mode);
+  }
+});
+
 test('activation registers owned Antigravity overrides without changing the native base', async t => {
   const { home, daemon, deps } = await makePluginFixture(t, { version: 1, daemon: { mcp: { enabled: true } } });
   const manager = createManager(deps); const id = randomUUID();

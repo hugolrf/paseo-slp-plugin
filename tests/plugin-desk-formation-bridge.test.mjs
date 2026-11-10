@@ -23,7 +23,7 @@ function managedBridge(t, options = {}) {
   const { afterCreate, profile = codexProfile, reportedModeId, omitCurrentModeId, providerEntries, registration = 'ready', registerIn = 'child' } = options;
   const providerModes = Object.hasOwn(options, 'providerModes') ? options.providerModes : [{ id: 'full-access' }];
   const includeProviderModes = options.includeProviderModes !== false;
-  const dir = mkdtempSync(join(tmpdir(), 'slp-managed-formation-'));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'slp-managed-formation-')));
   t.after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 3 }));
   const repo = gitRepo(t, 'slp-managed-formation-repo-');
   const home = join(dir, 'home');
@@ -156,7 +156,7 @@ function managedBridge(t, options = {}) {
 
 async function boundFormationSeat(t, options) {
   const f = managedBridge(t, options);
-  assert.equal(await f.ready, 'listening');
+  assert.equal(await f.ready, 'listening', JSON.stringify(f.bridge.state()));
   t.after(() => f.bridge.stop());
   const handle = `formation-${randomUUID()}`;
   const row = memberRow(handle, { provider: f.profile.provider, at }, {
@@ -329,6 +329,29 @@ test('a provider with advertised modes cannot bypass an unresolved saved profile
   assert.equal(out.result.code, 'CAPABILITY_GAP', JSON.stringify(out.result));
   assert.equal(f.effects.creates.length, 0);
   assert.equal(f.effects.sends.length, 0);
+});
+
+test('Claude Lead selects host-advertised Auto when saved mode is unresolved', async t => {
+  const profile = { ...codexProfile, provider: 'slp-claude-lead', model: 'claude-opus-5-5', modeId: null,
+    thinkingOptionId: 'medium', featureValues: {} };
+  const f = await boundFormationSeat(t, { profile, providerModes: [
+    { id: 'plan' }, { id: 'default' }, { id: 'auto' }, { id: 'acceptEdits' }, { id: 'bypassPermissions' },
+  ] });
+  const out = await callTool(f, 1, 'slp_seat_create', seatCreate('claude-safe-auto'));
+  assert.equal(out.result?.code === 'CAPABILITY_GAP', false, JSON.stringify(out.result));
+  assert.equal(f.effects.creates.length, 1, JSON.stringify(out));
+  assert.equal(f.effects.creates[0].options.config.modeId, 'auto');
+  assert.equal(f.effects.creates[0].options.config.provider, 'slp-claude-lead/claude-opus-5-5');
+});
+
+test('Claude Lead without Auto never falls back to bypass, acceptEdits or default', async t => {
+  const profile = { ...codexProfile, provider: 'slp-claude-lead', model: 'claude-opus-5-5', modeId: null };
+  const f = await boundFormationSeat(t, { profile, providerModes: [
+    { id: 'plan' }, { id: 'default' }, { id: 'acceptEdits' }, { id: 'bypassPermissions' },
+  ] });
+  const out = await callTool(f, 1, 'slp_seat_create', seatCreate('claude-no-safe-default'));
+  assert.equal(out.result.code, 'CAPABILITY_GAP', JSON.stringify(out.result));
+  assert.equal(f.effects.creates.length, 0);
 });
 
 test('empty-mode provider verification rejects a host-reported inherited mode and withholds assignment', async t => {
